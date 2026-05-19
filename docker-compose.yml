@@ -1,0 +1,1813 @@
+x-n8n-volumes: &n8n-volumes
+  - n8n_data:/home/node/.n8n
+  - /data/sites:/data/sites
+  - /home/mello/commander:/host/commander
+  - /home/mello/commander/projects/langgraph:/host/langgraph
+  - /home/mello/n8n-export:/import:ro
+  - /usr/share/fonts:/usr/share/fonts:ro
+
+x-n8n-common-env: &n8n-common-env
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_HOST: postgres
+  DB_POSTGRESDB_PORT: 5432
+  DB_POSTGRESDB_DATABASE: n8n
+  DB_POSTGRESDB_USER: n8n
+  DB_POSTGRESDB_PASSWORD: n8n
+  EXECUTIONS_MODE: queue
+  QUEUE_BULL_REDIS_HOST: redis
+  QUEUE_BULL_REDIS_PORT: 6379
+  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+  N8N_RUNNERS_ENABLED: "true"
+  N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+  N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+  N8N_DIAGNOSTICS_ENABLED: "false"
+  N8N_BINARY_DATA_MODE: filesystem
+  N8N_PAYLOAD_SIZE_MAX: 32
+  N8N_EXECUTIONS_DATA_PRUNE: "true"
+  N8N_EXECUTIONS_DATA_MAX_AGE: "2"
+  N8N_EXECUTIONS_DATA_PRUNE_MAX_COUNT: "100"
+  EXECUTIONS_DATA_SAVE_ON_SUCCESS: "all"
+  EXECUTIONS_DATA_SAVE_ON_ERROR: "all"
+  EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "true"
+  EXECUTIONS_DATA_SAVE_ON_PROGRESS: "true"
+  NODES_EXCLUDE: "[]"
+  NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+  # API Keys from .env
+  NOCODB_API: ${NOCODB_API}
+  SURREAL_USER: ${SURREAL_USER}
+  SURREAL_PASS: ${SURREAL_PASS}
+  FAL_KEY: ${FAL_KEY}
+  ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+  SURREAL_AUTH_HEADER: ${SURREAL_AUTH_HEADER}
+  SCRAPE_CREATORS_API_KEY: ${SCRAPE_CREATORS_API_KEY}
+  TELEGRAM_FB_PHOTO_TOKEN: ${TELEGRAM_FB_PHOTO_TOKEN}
+  TELEGRAM_FB_EXTRACTOR_TOKEN: ${TELEGRAM_FB_EXTRACTOR_TOKEN}
+  TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+  NODE_FUNCTION_ALLOW_BUILTIN: "crypto,fs,path,http,https,url,stream,buffer,querystring,zlib"
+  NODE_FUNCTION_ALLOW_EXTERNAL: "*"
+
+x-n8n-deploy: &n8n-deploy
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: [ '0' ]
+            capabilities: [ gpu ]
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: n8n-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: n8n
+      POSTGRES_DB: n8n
+    volumes:
+      - n8n_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - n8n-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: n8n-redis
+    restart: always
+    networks:
+      - n8n-net
+
+  n8n-main:
+    container_name: n8n-main
+    build:
+      context: /home/mello/n8n-ffmpeg
+    image: n8n-with-ffmpeg:next
+    <<: *n8n-deploy
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      <<: *n8n-common-env
+      WEBHOOK_URL: https://n8n.synai.ai
+      N8N_HOST: n8n.synai.ai
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes: *n8n-volumes
+    networks:
+      - n8n-net
+
+  worker-1:
+    container_name: n8n-worker-1
+    build:
+      context: /home/mello/n8n-ffmpeg
+    image: n8n-with-ffmpeg:next
+    <<: *n8n-deploy
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    command: n8n worker
+    environment:
+      <<: *n8n-common-env
+    volumes: *n8n-volumes
+    networks:
+      - n8n-net
+
+  worker-2:
+    container_name: n8n-worker-2
+    build:
+      context: /home/mello/n8n-ffmpeg
+    image: n8n-with-ffmpeg:next
+    <<: *n8n-deploy
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    command: n8n worker
+    environment:
+      <<: *n8n-common-env
+    volumes: *n8n-volumes
+    networks:
+      - n8n-net
+
+  worker-3:
+    container_name: n8n-worker-3
+    build:
+      context: /home/mello/n8n-ffmpeg
+    image: n8n-with-ffmpeg:next
+    <<: *n8n-deploy
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    command: n8n worker
+    environment:
+      <<: *n8n-common-env
+    volumes: *n8n-volumes
+    networks:
+      - n8n-net
+
+  db-cleaner:
+    image: postgres:15
+    container_name: n8n-db-cleaner
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      PGHOST: postgres
+      PGUSER: n8n
+      PGPASSWORD: n8n
+      PGDATABASE: n8n
+    networks:
+      - n8n-net
+    entrypoint: /bin/sh
+    command: -c "while true; do sleep 172800; psql -c \"DELETE FROM execution_entity WHERE \\\"startedAt\\\" < NOW() - INTERVAL '240 hours';\"; psql -c \"VACUUM ANALYZE;\"; echo \"Cleaned executions older than 240 hours at $$(date)\"; done"
+
+  nocodb:
+    image: nocodb/nocodb@sha256:d9516f0bf546fd6c78a382ab0657626c683fca7aaafdbbe53c66baf15df7fc0d
+    container_name: nocodb
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      NC_DB: "pg://postgres:5432?u=n8n&p=n8n&d=nocodb"
+    ports:
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - nocodb_data:/usr/app/data
+    networks:
+      - n8n-net
+
+  # qdrant: REMOVED 2026-01-31 - unused, data was redundant with CLAUDE.md
+  # Using pgvector on existing PostgreSQL if vector search needed
+
+  factory-agent:
+    image: python:3.11-slim
+    container_name: factory-agent
+    restart: unless-stopped
+    environment:
+      FAL_KEY: ${FAL_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+    volumes:
+      - ./commander/projects/factory-agent:/app
+      - ./commander:/host/commander:ro
+      - /data/sites:/data/sites
+    working_dir: /app
+    networks:
+      - n8n-net
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y --no-install-recommends ffmpeg curl &&
+        pip install --no-cache-dir anthropic fal-client aiohttp &&
+        python server.py
+      "
+    ports:
+      - "127.0.0.1:8050:8050"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+
+  deep-origins:
+    build:
+      context: ./commander/projects/deep-origins
+      dockerfile: Dockerfile
+    image: deep-origins:latest
+    container_name: deep-origins
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgresql://n8n:n8n@postgres:5432/deep_origins
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATA_DIR: /data/videos
+      PUBLIC_DIR: /data/sites/evolution
+      FONTS_DIR: /usr/share/fonts/truetype/custom
+      PUBLIC_BASE_URL: https://videos.evolutionlabs.blog
+      HOST: 0.0.0.0
+      PORT: 8060
+      PYTHONUNBUFFERED: 1
+      DEEP_ORIGINS_API_KEY: ${DEEP_ORIGINS_API_KEY}
+      DEEP_ORIGINS_AUTH_ENABLED: ${DEEP_ORIGINS_AUTH_ENABLED:-true}
+      # Internal NocoDB URL — public nocodb.synai.ai is CF-Access gated, blocking server-to-server.
+      # Container is on n8n-net so it can reach nocodb directly.
+      NOCODB_INTERNAL_URL: http://nocodb:8080
+      NOCODB_API: ${NOCODB_API}
+      PATH: "/home/mello/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    volumes:
+      - ./commander/projects/deep-origins:/app
+      - /data/sites:/data/sites
+      - /usr/share/fonts:/usr/share/fonts:ro
+      # Claude CLI for LLM calls (no ANTHROPIC_API_KEY — use the CLI per home-server policy).
+      # `.claude` and `.claude.json` need to be writable: the CLI updates session
+      # persistence, statsig/growthbook cache, and debug logs on every call. With
+      # :ro, every claude invocation hits EROFS during appendFileSync and exits
+      # with empty stdout.
+      - /home/mello/.local/bin:/home/mello/.local/bin:ro
+      - /home/mello/.local/share/claude:/home/mello/.local/share/claude:ro
+      - /home/mello/.claude.json:/root/.claude.json:rw
+      - /home/mello/.claude:/root/.claude:rw
+    working_dir: /app
+    networks:
+      - n8n-net
+    ports:
+      - "127.0.0.1:8060:8060"
+
+  surrealdb:
+    image: surrealdb/surrealdb:v3.0
+    container_name: surrealdb
+    restart: always
+    user: "65532:65532"
+    command: start --log info --user ${SURREAL_USER} --pass ${SURREAL_PASS} surrealkv:/data/srdb.db
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - surreal_data_v3:/data
+    networks:
+      - n8n-net
+
+  surrealist:
+    image: surrealdb/surrealist@sha256:b4cca2ae4fd43fb18adaed9b51f34cf3a59d32cf4645eb038c9d0760580c772c
+    container_name: surrealist
+    restart: always
+    ports:
+      - "127.0.0.1:8002:8080"
+    networks:
+      - n8n-net
+
+  commander:
+    build:
+      context: ./commander
+      dockerfile: Dockerfile
+    image: commander:latest
+    container_name: commander
+    user: "1001:1001"
+    group_add:
+      - "984" # docker group for socket access
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    depends_on:
+      - surrealdb
+    environment:
+      HOME: /home/mello
+      SURREAL_URL: http://surrealdb:8000
+      PYTHONUNBUFFERED: 1
+      COMMANDER_WEBHOOK_SECRET: ${COMMANDER_WEBHOOK_SECRET}
+    ports:
+      - "127.0.0.1:8070:8070"
+    networks:
+      - n8n-net
+    volumes:
+      - ./commander:/app
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /home/mello:/host/mello
+      - /data:/data
+      - /etc/nginx:/host/nginx:ro
+      - /var/log:/host/logs:ro
+      - /home/mello/.claude:/home/mello/.claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+      - /home/mello/.npm:/home/mello/.npm
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8070/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+
+  comfyui:
+    build:
+      context: /home/mello/ComfyUI
+    image: comfyui:local
+    container_name: comfyui
+    restart: unless-stopped
+    command: ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--enable-cors-header", "https://comfyui.synai.ai", "--disable-pinned-memory", "--disable-async-offload", "--reserve-vram", "2"]
+    mem_limit: 40g
+    memswap_limit: 56g
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8188:8188"
+    volumes:
+      - comfyui_data:/home/runner
+      - /home/mello/.env:/app/.env:ro
+      - /data/sites:/data/sites
+      - /home/mello/ComfyUI/input:/app/input
+      - /home/mello/ComfyUI/output:/app/output
+      - /home/mello/ComfyUI/custom_nodes:/app/custom_nodes
+      - /home/mello/ComfyUI/models:/app/models
+      - /data/llama-models:/data/llama-models:ro
+      - /home/mello/comfyui-workflows:/app/user/default/workflows
+      - /home/mello/vlm-inspect:/app/vlm-inspect
+      - /home/mello/.claude.json:/root/.claude.json:ro
+    environment:
+      TORCH_COMPILE_DISABLE: "1"
+      COMFY_API_KEY: ${COMFY_API_KEY}
+      LD_LIBRARY_PATH: "/usr/lib/x86_64-linux-gnu:/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+    networks:
+      - n8n-net
+
+  mcp-server:
+    build:
+      context: ./commander/projects/mcp-server
+    image: mcp-server:latest
+    container_name: mcp-server
+    restart: unless-stopped
+    environment:
+      MCP_API_KEY: ${MCP_API_KEY}
+      MCP_REQUIRE_AUTH: "true"
+      MCP_AUTH_ENABLED: ${MCP_AUTH_ENABLED:-true}
+      MCP_OAUTH_ENABLED: ${MCP_OAUTH_ENABLED:-true}
+      MCP_LEGACY_AUTH: ${MCP_LEGACY_AUTH:-true}
+      MCP_ISSUER_URL: ${MCP_ISSUER_URL:-https://mcp.synai.ai}
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:-https://mcp.synai.ai/mcp}
+      MCP_DB_PATH: /app/data/oauth.db
+      MCP_CF_TEAM_DOMAIN: ${MCP_CF_TEAM_DOMAIN:-https://home-server-mello.cloudflareaccess.com}
+      MCP_CF_ACCESS_AUD: ${MCP_CF_ACCESS_AUD:-}
+      MCP_AUDIT_LOG: /app/logs/audit.log
+      UVICORN_HOST: "0.0.0.0"
+      UVICORN_PORT: "8000"
+    ports:
+      - "127.0.0.1:8080:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /home/mello:/home/mello
+      - /data:/data
+      - /var/www:/var/www
+      - /etc/nginx:/etc/nginx:ro
+      - /var/log:/var/log:ro
+      - ./commander/projects/mcp-server/data:/app/data
+    networks:
+      - n8n-net
+
+  youtube-uploader:
+    build:
+      context: ./commander/projects/youtube-uploader
+    image: youtube-uploader:latest
+    container_name: youtube-uploader
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8055:8055"
+    volumes:
+      - ./commander/projects/youtube-uploader:/app
+      - /data:/data:ro
+    networks:
+      - n8n-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_NUM_PARALLEL=32
+      - OLLAMA_FLASH_ATTENTION=1
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - /home/mello/.ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+    networks:
+      - n8n-net
+  ollama-embed:
+    image: ollama/ollama:latest
+    container_name: ollama-embed
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_NUM_PARALLEL: "3"
+      NVIDIA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+    volumes:
+      - ollama_embed_data:/root/.ollama
+    networks:
+      - n8n-net
+
+  # mindfulmoment:
+  #   build:
+  #     context: /data/sites/mindfulmoment
+  #     dockerfile: Dockerfile
+  #   image: mindfulmoment:latest
+  #   container_name: mindfulmoment
+  #   restart: unless-stopped
+  #   environment:
+  #     MINDFUL_SUPABASE_URL: http://supabase-kong:8000
+  #     MINDFUL_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzY3MjQ0NDg3LCJleHAiOjIwODI2MDQ0ODd9.e34vG0FD0F9wpD6blmEtaqEuAzlw4aHm4SNWcg95lQ8
+  #     MINDFUL_OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #     MINDFUL_ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+  #     SESSION_SECRET: ${SESSION_SECRET:-mindful-session-secret-change-me}
+  #     NODE_ENV: production
+  #   ports:
+  #     - "5000:5000"
+  #   networks:
+  #     - n8n-net
+  #     - supabase_default
+  #   # postgrest:
+  #   image: postgrest/postgrest:latest
+  #   container_name: postgrest
+  #   restart: always
+  #   depends_on:
+  #     - postgres
+  #   environment:
+  #     PGRST_DB_URI: postgres://n8n:n8n@postgres:5432/mindfulmoment
+  #     PGRST_DB_SCHEMA: public
+  #     PGRST_DB_ANON_ROLE: n8n
+  #     PGRST_JWT_SECRET: super-secret-jwt-key-for-mindfulmoment-change-in-production
+  #     PGRST_SERVER_PORT: 3000
+  #   ports:
+  #     - "3001:3000"
+  #   networks:
+  #     - n8n-net
+  #
+  street-camera:
+    build:
+      context: ./commander/projects/street-camera
+    image: street-camera:latest
+    container_name: street-camera
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      UNIFI_HOST: ${UNIFI_PROTECT_HOST}
+      UNIFI_USERNAME: ${UNIFI_USER}
+      UNIFI_PASSWORD: ${UNIFI_PASS}
+      SAMPLE_FPS: "5"
+      SAVE_SNAPSHOTS: "true"
+      IMAGE_DIR: /data/street-camera/images
+      DB_PATH: /data/street-camera/analytics.db
+      MIN_CONFIDENCE: "0.60"
+      DAILY_REPORT_HOUR: "21"
+      IMAGE_RETENTION_DAYS: "7"
+      REPORT_PORT: "8097"
+      PYTHONUNBUFFERED: 1
+      NVIDIA_VISIBLE_DEVICES: 0
+      COMFYUI_URL: http://comfyui:8188
+      OLLAMA_VLM_URL: http://ollama-embed:11434
+      OLLAMA_VLM_MODEL: qwen2.5vl:7b
+      ALERT_URL: http://street-camera-bot:8098/alert
+    volumes:
+      - ./commander/projects/street-camera:/app
+      - /data/street-camera:/data/street-camera
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    depends_on:
+      - street-camera-bot
+      - ollama-embed
+    networks:
+      - n8n-net
+
+  street-camera-bot:
+    build:
+      context: ./commander/projects/street-camera-bot
+    image: street-camera-bot:latest
+    container_name: street-camera-bot
+    restart: unless-stopped
+    environment:
+      TELEGRAM_TRUCK_TOKEN: ${TELEGRAM_TRUCK_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS}
+      DETECTION_DIR: /data/street-camera/images
+      ALERT_PORT: "8098"
+      REPORT_URL: http://street-camera:8097/report
+      PYTHONUNBUFFERED: 1
+      HOME: /home/mello
+    volumes:
+      - ./commander/projects/street-camera-bot:/app
+      - /data/street-camera:/data/street-camera
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+      - /home/mello/.claude:/home/mello/.claude:ro
+    networks:
+      - n8n-net
+
+  cloudflared:
+    image: cloudflare/cloudflared@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - n8n-net
+
+  # Personal activity tracker — UTC-6, single user, mobile-first.
+  # Tunnel route: activity.synai.ai -> activity-tracker:8076
+  activity-tracker:
+    build:
+      context: ./commander/projects/activity-tracker
+      dockerfile: Dockerfile
+    image: activity-tracker:latest
+    container_name: activity-tracker
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://n8n:n8n@postgres:5432/activity
+      APP_TZ_OFFSET_HOURS: "-6"
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "127.0.0.1:8076:8076"
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8076/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+
+  # StemDeck -- local YouTube -> 6-stem audio separator (Demucs htdemucs_6s).
+  # Tunnel route: stemdeck.synai.ai -> stemdeck:8000.
+  # GPU 0 shared with comfyui/whisper/ollama. No VRAM guard; manual coordination.
+  # entrypoint.sh updates yt-dlp on every container start.
+  stemdeck:
+    build:
+      context: ./commander/projects/stemdeck
+      dockerfile: build/Dockerfile.gpu
+    image: stemdeck:mello
+    container_name: stemdeck
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8059:8000"
+    volumes:
+      - ./commander/projects/stemdeck/jobs:/app/jobs
+      - stemdeck_cache:/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  docuseal:
+    image: docuseal/docuseal:latest
+    container_name: docuseal
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:3013:3000"
+    volumes:
+      - docuseal_data:/data/docuseal
+    environment:
+      - FORCE_SSL=docuseal.synai.ai
+      - HOST=docuseal.synai.ai
+      - WORKERS=2
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/up || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  memory-mcp:
+    build:
+      context: ./commander/projects/memory-mcp
+    image: memory-mcp:latest
+    container_name: memory-mcp
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: n8n
+      PG_PASSWORD: n8n
+      PG_DATABASE: n8n
+      EMBEDDING_MODEL: qwen3-embedding
+      EMBEDDING_DIM: "1536"
+      OLLAMA_EMBED_URL: http://ollama-embed:11434/api/embed
+      MCP_PORT: "8766"
+      MEMORY_API_KEY: ${MEMORY_API_KEY}
+    ports:
+      - "127.0.0.1:8766:8766"
+    networks:
+      - n8n-net
+
+  youtube-hunter:
+    build:
+      context: ./commander/projects/youtube-hunter
+    image: youtube-hunter:latest
+    container_name: youtube-hunter
+    restart: unless-stopped
+    environment:
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_ACCESS_TOKEN: ${YOUTUBE_EVOLUTION_ACCESS_TOKEN}
+      GOOGLE_REFRESH_TOKEN: ${YOUTUBE_EVOLUTION_REFRESH_TOKEN}
+      NOCODB_API: ${NOCODB_API}
+    ports:
+      - "127.0.0.1:8075:8075"
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8075/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - n8n-net
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    networks:
+      - n8n-net
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/data
+    command: -config.file=/etc/promtail/promtail.yml
+    networks:
+      - n8n-net
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
+    container_name: cadvisor
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_READ_SEARCH
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      - n8n-net
+
+  server-health-monitor:
+    build:
+      context: ./commander
+      dockerfile: projects/server_health_monitor/Dockerfile
+    image: server-health-monitor:latest
+    container_name: server-health-monitor
+    restart: unless-stopped
+    depends_on:
+      - surrealdb
+    env_file:
+      - ./.env
+    environment:
+      SURREAL_URL: http://surrealdb:8000
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./commander:/app/commander:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:8095:8095"
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8095/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  whisper-stt:
+    build:
+      context: ./commander/projects/whisper-stt
+    image: whisper-stt:latest
+    container_name: whisper-stt
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8058:8058"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0"
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8058/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  claude-telegram:
+    build:
+      context: ./commander/projects/claude-telegram
+    image: claude-telegram:latest
+    container_name: claude-telegram
+    user: "1001:1001"
+    group_add:
+      - "995"
+      - "984"
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - whisper-stt
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu, utility ]
+    env_file:
+      - ./.env
+    environment:
+      HOME: /home/mello
+      WHISPER_STT_URL: http://whisper-stt:8058/transcribe
+      SKOOL_API_URL: http://skool-api:8091
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_JOE_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-1359185565}
+      SCRAPE_CREATORS_API_KEY: ${SCRAPE_CREATORS_API_KEY:-}
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: n8n
+      PG_PASSWORD: n8n
+      PG_DATABASE: n8n
+      OCR_SERVER_URL: http://ocr-server:8057
+      COMFYUI_API_URL: http://comfyui:8188
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-claude:claude-opus-4-7}
+      CLAUDE_DEFAULT_MODEL: ${CLAUDE_DEFAULT_MODEL:-claude-opus-4-7}
+      CLAUDE_EFFORT: ${CLAUDE_EFFORT:-max}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_PROJECT_ID: ${OPENAI_PROJECT_ID:-}
+      OPENAI_ORG_ID: ${OPENAI_ORG_ID:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_DEFAULT_MODEL: ${OPENAI_DEFAULT_MODEL:-codex-mini-latest}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY:-}
+      GEMINI_DEFAULT_MODEL: ${GEMINI_DEFAULT_MODEL:-gemini-2.5-flash}
+      NVIDIA_VISIBLE_DEVICES: 0
+      NVIDIA_DRIVER_CAPABILITIES: utility
+      TELEGRAM_CONFIRM_ENABLED: "1"
+      NOCODB_URL: http://nocodb:8080
+      NOCODB_API_TOKEN: ${NOCODB_API:-}
+      SOCIAL_POSTS_TABLE_ID: moapl0l57rfvdxv
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - /home/mello/.claude:/home/mello/.claude:rw
+      - /home/mello/.claude.json:/home/mello/.claude.json:rw
+      - /home/mello/.npm:/home/mello/.npm
+      - /home/mello:/home/mello:rw
+      - /home/mello/ComfyUI/output:/home/mello/ComfyUI/output:ro
+      - /data:/data
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import sys; sys.exit(0)" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  ocr-server:
+    build:
+      context: ./commander/projects/ocr-server
+    image: ocr-server:latest
+    container_name: ocr-server
+    restart: unless-stopped
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8057/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Public read-only viewer for the Time-Travel Vlogger Franchise.
+  # Tunnel route: franchise.synai.ai -> franchise-viewer:8080
+  franchise-viewer:
+    image: nginx:1.27-alpine
+    container_name: franchise-viewer
+    restart: unless-stopped
+    user: "101:101"
+    command: ["nginx", "-g", "daemon off;", "-c", "/etc/nginx/nginx.conf"]
+    volumes:
+      - /home/mello/commander/projects/franchise-viewer/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /home/mello/commander/projects/franchise-viewer:/srv/spa:ro
+      - /home/mello/commander/projects/time-travel-franchise/bible:/srv/bible:ro
+      - /home/mello/commander/projects/time-travel-franchise/.state/stories:/srv/stories:ro
+      - /home/mello/commander/projects/time-travel-franchise/.state/hero_refs:/srv/hero_refs:ro
+      - /home/mello/commander/projects/time-travel-franchise/.state/runs:/srv/runs:ro
+      - /home/mello/commander/projects/time-travel-franchise/.state/training_sets:/srv/training_sets:ro
+    depends_on:
+      - franchise-curator
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Write-capable companion to franchise-viewer.
+  # Lives behind franchise-viewer's nginx at /curate/ and /api/curate/.
+  # Cloudflare Access (Gmail allowlist) guards the path at the edge.
+  franchise-curator:
+    build:
+      context: ./commander/projects/franchise-curator
+    image: franchise-curator:latest
+    container_name: franchise-curator
+    restart: unless-stopped
+    volumes:
+      # WRITABLE — this is where _selections.json + _main.txt live.
+      - /home/mello/commander/projects/time-travel-franchise/.state/training_sets:/srv/training_sets:rw
+      - /home/mello/commander/projects/time-travel-franchise/.state/hero_refs:/srv/hero_refs:ro
+      # Live-edit static assets without rebuilding the image.
+      - /home/mello/commander/projects/franchise-curator/static:/app/static:ro
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8085/healthz').read()==b'ok' else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # @Commander_Mello_bot — Time-Travel Vlogger Franchise Claude Code terminal.
+  # Repurposed 2026-05-11: was a general image-gen bot, now locked to the franchise project.
+  image-telegram:
+    build:
+      context: ./commander/projects/image-telegram
+    image: image-telegram:latest
+    container_name: image-telegram
+    user: "1001:1001"
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - ./.env
+    environment:
+      HOME: /home/mello
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_IMAGE_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: n8n
+      PG_PASSWORD: n8n
+      PG_DATABASE: n8n
+      FRANCHISE_DIR: /home/mello/commander/projects/time-travel-franchise
+      PUBLIC_VIEWER_URL: https://franchise.synai.ai
+      DEFAULT_MODEL: sonnet
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /home/mello/mello:/home/mello/mello:ro
+      - /home/mello/.claude:/home/mello/.claude
+      - /home/mello/.claude.json:/home/mello/.claude.json
+      - /home/mello/.npm:/home/mello/.npm
+      - /home/mello/commander/projects/time-travel-franchise:/home/mello/commander/projects/time-travel-franchise
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import sys; sys.exit(0)" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  dreamvault-gen:
+    build:
+      context: ./commander/projects/dreamvault-gen
+    image: dreamvault-gen:latest
+    container_name: dreamvault-gen
+    user: "1001:1001"
+    restart: unless-stopped
+    environment:
+      DREAMVAULT_GEN_TOKEN: ${DREAMVAULT_GEN_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      COMFYUI_API_URL: http://comfyui:8188
+      MYDESIGNS_EMAIL: ${MYDESIGNS_EMAIL}
+      MYDESIGNS_PASSWORD: ${MYDESIGNS_PASSWORD}
+      KIE_API_KEY: ${KIE_API_KEY}
+      FAL_KEY: ${FAL_KEY}
+      PROMPT_EDIT_MODEL: sonnet
+      PATH: /home/mello/.local/bin:/usr/local/bin:/usr/bin:/bin
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+      HOME: /home/mello
+    volumes:
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /home/mello/comfyui-workflows/api:/home/mello/comfyui-workflows/api:ro
+      - /home/mello/ComfyUI/input:/home/mello/ComfyUI/input
+      - /home/mello/ComfyUI/output:/home/mello/ComfyUI/output:ro
+      - /home/mello/.local/bin:/home/mello/.local/bin:ro
+      - /home/mello/.local/share/claude:/home/mello/.local/share/claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+      - /home/mello/.claude/.credentials.json:/home/mello/.claude/.credentials.json:ro
+    networks:
+      - n8n-net
+
+  comfyui-proxy:
+    build:
+      context: ./commander/projects/comfyui-proxy
+    image: comfyui-proxy:latest
+    container_name: comfyui-proxy
+    user: "1001:1001"
+    restart: unless-stopped
+    environment:
+      COMFYUI_API_URL: http://comfyui:8188
+      VRAM_GUARD_OLLAMA_URL: http://ollama:11434
+      VRAM_GUARD_COMFYUI_URL: http://comfyui:8188
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /home/mello/ComfyUI/input:/home/mello/ComfyUI/input
+      - /home/mello/ComfyUI/output:/home/mello/ComfyUI/output:ro
+      - /data/sites/dreamvault:/data/sites/dreamvault
+    networks:
+      - n8n-net
+
+  casa-api:
+    build:
+      context: ./commander/projects/casa-ai
+    image: casa-api:latest
+    container_name: casa-api
+    user: "1001:1001"
+    restart: unless-stopped
+    environment:
+      COMFYUI_API_URL: http://comfyui:8188
+      COMFYUI_INPUT_DIR: /home/mello/ComfyUI/input
+      COMFYUI_OUTPUT_DIR: /home/mello/ComfyUI/output
+      REDIS_URL: redis://redis:6379/2
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+      CORS_ORIGINS: https://casa.synai.ai,http://localhost:3500
+    volumes:
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /home/mello/ComfyUI/input:/home/mello/ComfyUI/input
+      - /home/mello/ComfyUI/output:/home/mello/ComfyUI/output:ro
+    ports:
+      - "127.0.0.1:8500:8500"
+    networks:
+      - n8n-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+
+  casa-web:
+    build:
+      context: ./commander/projects/casa-web
+    image: casa-web:latest
+    container_name: casa-web
+    user: "1001:1001"
+    restart: unless-stopped
+    environment:
+      CASA_API_URL: http://casa-api:8500
+    ports:
+      - "127.0.0.1:3500:3500"
+    networks:
+      - n8n-net
+
+  etsy-telegram:
+    build:
+      context: ./commander/projects/etsy-telegram
+    image: etsy-telegram:latest
+    container_name: etsy-telegram
+    user: "1001:1001"
+    restart: unless-stopped
+    environment:
+      TELEGRAM_ETSY_TOKEN: ${TELEGRAM_ETSY_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_NOTIFICATION_CHAT_ID: ${TELEGRAM_NOTIFICATION_CHAT_ID:-}
+      ETSY_API_KEYSTRING: ${ETSY_API_KEYSTRING}
+      ETSY_SHOP1_ID: ${ETSY_SHOP1_ID}
+      ETSY_SHOP1_ACCESS_TOKEN: ${ETSY_SHOP1_ACCESS_TOKEN}
+      ETSY_SHOP1_REFRESH_TOKEN: ${ETSY_SHOP1_REFRESH_TOKEN}
+      ETSY_SHOP2_ID: ${ETSY_SHOP2_ID}
+      ETSY_SHOP2_ACCESS_TOKEN: ${ETSY_SHOP2_ACCESS_TOKEN}
+      ETSY_SHOP2_REFRESH_TOKEN: ${ETSY_SHOP2_REFRESH_TOKEN}
+      ETSY_SHOP3_ID: ${ETSY_SHOP3_ID}
+      ETSY_SHOP3_ACCESS_TOKEN: ${ETSY_SHOP3_ACCESS_TOKEN}
+      ETSY_SHOP3_REFRESH_TOKEN: ${ETSY_SHOP3_REFRESH_TOKEN}
+      ETSY_SHOP4_ID: ${ETSY_SHOP4_ID}
+      ETSY_SHOP4_ACCESS_TOKEN: ${ETSY_SHOP4_ACCESS_TOKEN}
+      ETSY_SHOP4_REFRESH_TOKEN: ${ETSY_SHOP4_REFRESH_TOKEN}
+      HOME: /home/mello
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /home/mello/.env:/host/mello/.env
+      - /data/etsy-telegram:/app/data
+      - /home/mello/.claude:/home/mello/.claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+      - /home/mello/.npm:/home/mello/.npm
+    networks:
+      - n8n-net
+
+  avatar-pipeline:
+    build:
+      context: /data/sites/avatar_pipeline
+      dockerfile: Dockerfile
+    image: avatar-pipeline:latest
+    container_name: avatar-pipeline
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8097:8097"
+    volumes:
+      - /data/sites/avatar_pipeline/portraits:/data/sites/avatar_pipeline/portraits
+      - /data/sites/avatar_pipeline/voices:/data/sites/avatar_pipeline/voices
+      - /data/sites/avatar_pipeline/output:/data/sites/avatar_pipeline/output
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /home/mello/comfyui-workflows:/home/mello/comfyui-workflows:ro
+      - /home/mello/ComfyUI/input:/home/mello/ComfyUI/input
+      - /home/mello/ComfyUI/output:/home/mello/ComfyUI/output:ro
+    environment:
+      COMFYUI_API_URL: http://comfyui:8188
+      TTS_SERVICE_URL: http://tts-service:8096
+      PYTHONUNBUFFERED: 1
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8097/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  videogen-factory:
+    build:
+      context: ./commander/projects/videogen-factory
+      dockerfile: Dockerfile
+    image: videogen-factory:latest
+    container_name: videogen-factory
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgresql://n8n:n8n@n8n-postgres:5432/veo3_factory
+      REDIS_URL: redis://n8n-redis:6379
+      KIE_API_KEY: ${KIE_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      COMFYUI_URL: http://comfyui:8188
+      NODE_ENV: production
+      PORT: "3005"
+      HOSTNAME: 0.0.0.0
+      DATA_DIR: /data/videogen
+    ports:
+      - "127.0.0.1:3005:3005"
+    volumes:
+      - /data/sites:/data/sites
+      - /data/videogen:/data/videogen
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3005/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  videogen-worker:
+    build:
+      context: ./commander/projects/videogen-factory
+      dockerfile: Dockerfile
+    image: videogen-factory:latest
+    container_name: videogen-worker
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - videogen-factory
+    environment:
+      DATABASE_URL: postgresql://n8n:n8n@n8n-postgres:5432/veo3_factory
+      REDIS_URL: redis://n8n-redis:6379
+      KIE_API_KEY: ${KIE_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      COMFYUI_URL: http://comfyui:8188
+      NODE_ENV: production
+      DATA_DIR: /data/videogen
+      WORKER_MODE: "true"
+    command: [ "node", "dist-workers/workers/start.js" ]
+    volumes:
+      - /data/sites:/data/sites
+      - /data/videogen:/data/videogen
+    networks:
+      - n8n-net
+
+  skool-api:
+    build:
+      context: ./commander/projects/skool-api
+    image: skool-api:latest
+    container_name: skool-api
+    user: "1001:1001"
+    restart: unless-stopped
+    environment:
+      NOCODB_API: ${NOCODB_API}
+      NOCODB_INTERNAL_URL: http://nocodb:8080
+      COMFYUI_API_URL: http://comfyui:8188
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+      SKOOL_ENGAGEMENTS_TABLE: ${SKOOL_ENGAGEMENTS_TABLE:-}
+      SKOOL_GROUP_SETTINGS_TABLE: ${SKOOL_GROUP_SETTINGS_TABLE:-}
+      HOME: /home/mello
+      CLAUDE_BIN: /home/mello/.local/bin/claude
+    volumes:
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /home/mello/.cookies:/app/cookies:ro
+      - /home/mello/ComfyUI/output:/home/mello/ComfyUI/output:ro
+      - /data/sites/skool-api:/data
+      - /home/mello/.local/bin:/home/mello/.local/bin:ro
+      - /home/mello/.local/share/claude:/home/mello/.local/share/claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+      - /home/mello/.claude:/home/mello/.claude:rw
+    ports:
+      - "127.0.0.1:8091:8091"
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8091/health" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  skool-reply:
+    build:
+      context: ./commander/projects/skool-reply
+    image: skool-reply:latest
+    container_name: skool-reply
+    restart: unless-stopped
+    environment:
+      SKOOL_API_URL: http://skool-api:8091
+    ports:
+      - "127.0.0.1:8092:8092"
+    networks:
+      - n8n-net
+    depends_on:
+      - skool-api
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8092/health')" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  mello-garden:
+    build:
+      context: ./mello-garden
+      dockerfile: Dockerfile
+    container_name: mello-garden
+    restart: always
+    ports:
+      - "127.0.0.1:3010:3000"
+    environment:
+      DATABASE_URL: "postgresql://n8n:n8n@n8n-postgres:5432/mello_garden"
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      TZ: America/Chicago
+      AUTH_PASSWORD: ${MELLO_GARDEN_PASSWORD}
+      SESSION_SECRET: ${MELLO_GARDEN_SESSION_SECRET}
+      GARDEN_INTERNAL_TOKEN: ${GARDEN_INTERNAL_TOKEN}
+    volumes:
+      - /data/mello-garden/images:/app/public/uploads
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  fb-monitor:
+    build:
+      context: ./commander/projects/fb-monitor
+    image: fb-monitor:latest
+    container_name: fb-monitor
+    user: "1001:1001"
+    restart: unless-stopped
+    environment:
+      TELEGRAM_FB_EXTRACTOR_TOKEN: ${TELEGRAM_FB_EXTRACTOR_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-1359185565}
+      NOCODB_URL: http://nocodb:8080
+      NOCODB_API_TOKEN: ${NOCODB_API}
+      NOCODB_TABLE_ID: ${NOCODB_FB_PROFILES_TABLE_ID}
+      NOCODB_INFLUENCER_BASE_ID: ${NOCODB_INFLUENCER_BASE_ID}
+      TZ: America/Chicago
+      HOME: /home/mello
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - /data/fb-monitor:/data/fb-monitor
+      - /home/mello/facebook_cookies.txt:/home/mello/facebook_cookies.txt:ro
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+    networks:
+      - n8n-net
+
+  garden-telegram:
+    build:
+      context: ./commander/projects/garden-telegram
+    image: garden-telegram:latest
+    container_name: garden-telegram
+    user: "1001:1001"
+    restart: unless-stopped
+    depends_on:
+      mello-garden:
+        condition: service_healthy
+    environment:
+      TELEGRAM_GARDEN_TOKEN: ${TELEGRAM_GARDEN_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_NOTIFICATION_CHAT_ID: ${TELEGRAM_DEFAULT_CHAT_ID:-}
+      GARDEN_API_BASE: http://mello-garden:3000
+      GARDEN_INTERNAL_TOKEN: ${GARDEN_INTERNAL_TOKEN}
+      HOME_ASSISTANT_URL: http://192.168.2.120:8123
+      HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN}
+      TZ: America/Chicago
+      HOME: /home/mello
+      PATH: /home/mello/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - /home/mello/commander/tools:/home/mello/commander/tools:ro
+      - /data/garden-telegram/state:/app/data
+      - /home/mello/.local/bin:/home/mello/.local/bin:ro
+      - /home/mello/.local/share/claude:/home/mello/.local/share/claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+      - /home/mello/.claude/.credentials.json:/home/mello/.claude/.credentials.json:ro
+    networks:
+      - n8n-net
+
+  drinkwaretrove-gallery:
+    build:
+      context: ./commander/projects/drinkwaretrove-gallery
+      dockerfile: Dockerfile
+    image: drinkwaretrove-gallery:latest
+    container_name: drinkwaretrove-gallery
+    restart: unless-stopped
+    environment:
+      NOCODB_URL: http://nocodb:8080
+      NOCODB_API_TOKEN: ${NOCODB_API}
+      NODE_ENV: production
+      PORT: "3004"
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:3004:3004"
+    volumes:
+      - /data/sites/drinkwaretrove:/data/sites/drinkwaretrove
+      - /home/mello/ComfyUI/output:/home/mello/ComfyUI/output:ro
+      - drinkwaretrove-cache:/app/.next/cache
+    networks:
+      - n8n-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3004/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mellobooks-api:
+    build: ./mellobooks/api
+    container_name: mellobooks-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3400:3400"
+    environment:
+      - DATABASE_URL=postgresql://n8n:n8n@postgres:5432/mellobooks
+      - JWT_SECRET=${MB_JWT_SECRET}
+      - CLAUDE_API_KEY=${ANTHROPIC_API_KEY}
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SECRET=${PLAID_SECRET}
+      - PLAID_ENV=sandbox
+      - UPLOAD_DIR=/data/uploads
+      - AUTH_PASSWORD=${MB_AUTH_PASSWORD}
+      - NODE_ENV=production
+    volumes:
+      - mellobooks-uploads:/data/uploads
+    depends_on:
+      - postgres
+    networks:
+      - n8n-net
+
+  mellobooks-web:
+    build: ./mellobooks/web
+    container_name: mellobooks-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3401:3000"
+    depends_on:
+      - mellobooks-api
+    networks:
+      - n8n-net
+
+  viqa:
+    build: ./commander/projects/viqa
+    container_name: viqa
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+    ports:
+      - "192.168.3.60:3011:3011"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      OLLAMA_URL: "http://ollama:11434"
+      VLM_MODEL: "gemma4:31b-it-q8_0"
+      BLUR_THRESHOLD: "80.0"
+      TRAINING_DIR: "/data/training/viqa"
+      OPERATOR_REVIEW: "false"
+    volumes:
+      - /data/training/viqa:/data/training/viqa
+      - /home/mello/mb_inspection/model_cache:/root/.cache
+    networks:
+      - n8n-net
+
+  decay-viewer:
+    build: ./commander/projects/decay_pipeline
+    container_name: decay-viewer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3012:3012"
+    volumes:
+      - /home/mello/commander/projects/decay_pipeline/output:/app/output:ro
+    networks:
+      - n8n-net
+
+  ai-psychologist:
+    build:
+      context: ./commander/projects/ai-psychologist
+      dockerfile: Dockerfile
+    image: ai-psychologist:latest
+    container_name: ai-psychologist
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: "postgresql://n8n:n8n@postgres:5432/ai_psychologist"
+      COMFYUI_API_URL: http://comfyui:8188
+      TTS_SERVICE_URL: http://tts-service:8096
+      WHISPER_STT_URL: http://whisper-stt:8058/transcribe
+      NODE_ENV: production
+      PORT: "3021"
+      HOSTNAME: 0.0.0.0
+      TZ: America/Chicago
+      AUTH_PASSWORD: ${AI_PSYCHOLOGIST_PASSWORD}
+      SESSION_SECRET: ${AI_PSYCHOLOGIST_SESSION_SECRET}
+      COMFYUI_INPUT_DIR: /comfyui-input
+      COMFYUI_OUTPUT_DIR: /comfyui-output
+      AUDIO_DIR: /data/sites/ai-psychologist/audio
+      VIDEO_DIR: /data/sites/ai-psychologist/video
+      VOICE_REF_PATH: /data/sites/ai-psychologist/voices/sofia.wav
+      PORTRAIT_PATH: /app/assets/portraits/sofia.png
+      TTS_VOICE_REF: /data/sites/ai-psychologist/voices/sofia.wav
+    ports:
+      - "127.0.0.1:3021:3021"
+    volumes:
+      - /data/sites/ai-psychologist:/data/sites/ai-psychologist
+      - /data/ai-psychologist/portraits:/app/assets/portraits
+      - /data/ai-psychologist/sounds:/app/assets/sounds
+      - /home/mello/ComfyUI/input:/comfyui-input
+      - /home/mello/ComfyUI/output:/comfyui-output:ro
+      - /home/mello/comfyui-workflows/avatar:/app/assets/workflows:ro
+      - /home/mello/.claude.json:/home/appuser/.claude.json:ro
+      - /home/mello/.claude:/home/appuser/.claude:ro
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3021/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  pipeline-telegram:
+    build:
+      context: ./commander/projects/pipeline-telegram
+    image: pipeline-telegram:latest
+    container_name: pipeline-telegram
+    user: "1001:1001"
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      TELEGRAM_PIPELINE_TOKEN: ${TELEGRAM_PIPELINE_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      HOME: /home/mello
+      PYTHONPATH: /home/mello/commander/tools
+      PYTHONUNBUFFERED: 1
+      NOCODB_URL: http://nocodb:8080
+      NOCODB_API: ${NOCODB_API:-}
+      NOCODB_API_TOKEN: ${NOCODB_API:-}
+      COMFYUI_URL: http://comfyui:8188
+      EVERBEE_TOKEN: ${EVERBEE_TOKEN:-}
+      MYDESIGNS_EMAIL: ${MYDESIGNS_EMAIL:-}
+      MYDESIGNS_PASSWORD: ${MYDESIGNS_PASSWORD:-}
+      TOPICS_TODAY_PATH: /home/mello/commander/projects/linkedin-gems/data/topics_today.json
+    volumes:
+      - /home/mello:/home/mello:rw
+      - /data:/data
+      - /home/mello/.claude/confirm:/home/mello/.claude/confirm:rw
+    networks:
+      - n8n-net
+
+  # ==========================================================================
+  # Social Posting Pipeline
+  # ==========================================================================
+  social-posting:
+    build: ./commander/projects/social_posting
+    image: social-posting:latest
+    container_name: social-posting
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      HOME: /home/mello
+      PYTHONPATH: /app:/app/tools
+      PYTHONUNBUFFERED: "1"
+      TZ: America/Chicago
+      NOCODB_URL: http://nocodb:8080
+      NOCODB_API: ${NOCODB_API:-}
+      COMFYUI_URL: http://comfyui:8188
+      TTS_URL: http://whisper-stt:8096
+      TELEGRAM_PIPELINE_TOKEN: ${TELEGRAM_PIPELINE_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      SOCIAL_POSTING_MEDIA_ROOT: /app/media
+      SOCIAL_POSTING_PACKS_DIR: /app/packs
+      SOCIAL_POSTING_CONFIRM_DIR: /home/mello/.claude/confirm
+      SOCIAL_POSTING_APPROVAL_CHAT_ID: ${SOCIAL_POSTING_APPROVAL_CHAT_ID:-}
+      LINKEDIN_COMMANDER_ACCESS_TOKEN: ${LINKEDIN_COMMANDER_ACCESS_TOKEN:-}
+      LINKEDIN_COMMANDER_REFRESH_TOKEN: ${LINKEDIN_COMMANDER_REFRESH_TOKEN:-}
+      LINKEDIN_COMMANDER_URN: ${LINKEDIN_COMMANDER_URN:-}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      X_COMMANDER_ACCESS_TOKEN: ${X_COMMANDER_ACCESS_TOKEN:-}
+      X_COMMANDER_ACCESS_TOKEN_SECRET: ${X_COMMANDER_ACCESS_TOKEN_SECRET:-}
+      X_CLIENT_ID: ${X_CLIENT_ID:-}
+      X_CLIENT_SECRET: ${X_CLIENT_SECRET:-}
+      INSTAGRAM_COMMANDER_ACCESS_TOKEN: ${INSTAGRAM_COMMANDER_ACCESS_TOKEN:-}
+      INSTAGRAM_COMMANDER_ACCOUNT_ID: ${INSTAGRAM_COMMANDER_ACCOUNT_ID:-}
+      FACEBOOK_COMMANDER_PAGE_TOKEN: ${FACEBOOK_COMMANDER_PAGE_TOKEN:-}
+      FACEBOOK_COMMANDER_PAGE_ID: ${FACEBOOK_COMMANDER_PAGE_ID:-}
+    volumes:
+      - ./commander/projects/social_posting:/app
+      - ./commander/tools:/app/tools
+      - /home/mello/.credentials:/home/mello/.credentials:rw
+      - /home/mello/.claude/confirm:/home/mello/.claude/confirm:rw
+      - /home/mello/.local/bin/claude:/usr/local/bin/claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    networks:
+      - n8n-net
+    depends_on:
+      - nocodb
+      - comfyui
+
+  # ==========================================================================
+  # LinkedIn Gem Pipeline
+  # Watches tracked LinkedIn profiles for high-velocity "gem" posts, drafts
+  # 3 Roberto-voice reactions, routes to Telegram for 5-button approval,
+  # publishes the chosen draft. Text-only, no GPU.
+  # ==========================================================================
+  linkedin-gems:
+    build: ./commander/projects/linkedin-gems
+    image: linkedin-gems:latest
+    container_name: linkedin-gems
+    user: "1001:1001"
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      HOME: /home/mello
+      PYTHONPATH: /app:/app/tools
+      PYTHONUNBUFFERED: "1"
+      TZ: America/Chicago
+      NOCODB_URL: http://nocodb:8080
+      NOCODB_API: ${NOCODB_API:-}
+      APIFY_API_TOKEN: ${APIFY_API_TOKEN:-}
+      APIFY_LINKEDIN_POSTS_ACTOR: ${APIFY_LINKEDIN_POSTS_ACTOR:-harvestapi/linkedin-profile-posts}
+      TELEGRAM_PIPELINE_TOKEN: ${TELEGRAM_PIPELINE_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      LINKEDIN_GEMS_APPROVAL_CHAT_ID: ${LINKEDIN_GEMS_APPROVAL_CHAT_ID:-${TELEGRAM_ALLOWED_USERS:-}}
+      LINKEDIN_GEMS_SCRAPE_INTERVAL_MIN: ${LINKEDIN_GEMS_SCRAPE_INTERVAL_MIN:-75}
+      LINKEDIN_GEMS_THRESHOLD_MULT: ${LINKEDIN_GEMS_THRESHOLD_MULT:-3.0}
+      LINKEDIN_GEMS_MIN_HOURS: ${LINKEDIN_GEMS_MIN_HOURS:-2.0}
+      LINKEDIN_GEMS_MAX_TARGETS: ${LINKEDIN_GEMS_MAX_TARGETS:-10}
+      LINKEDIN_GEMS_APPROVAL_TIMEOUT_H: ${LINKEDIN_GEMS_APPROVAL_TIMEOUT_H:-24}
+      LINKEDIN_GEMS_CLAUDE_MODEL: ${LINKEDIN_GEMS_CLAUDE_MODEL:-opus}
+      LINKEDIN_COMMANDER_ACCESS_TOKEN: ${LINKEDIN_COMMANDER_ACCESS_TOKEN:-}
+      LINKEDIN_COMMANDER_REFRESH_TOKEN: ${LINKEDIN_COMMANDER_REFRESH_TOKEN:-}
+      LINKEDIN_COMMANDER_URN: ${LINKEDIN_COMMANDER_URN:-}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+    volumes:
+      - ./commander/projects/linkedin-gems:/app
+      - ./commander/tools:/app/tools
+      - /home/mello/.credentials:/home/mello/.credentials:rw
+      - /home/mello/.claude/confirm:/home/mello/.claude/confirm:rw
+      - /home/mello/.local/bin/claude:/usr/local/bin/claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:ro
+      - /home/mello/.claude:/home/mello/.claude:ro
+      - /home/mello/.claude/projects/-home-mello/memory:/app/memory:ro
+      - ./commander/projects/linkedin-gems/data:/app/data
+    networks:
+      - n8n-net
+    depends_on:
+      - nocodb
+      - pipeline-telegram
+
+  media-server:
+    image: nginx:alpine
+    container_name: media-server
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8056:80"
+    volumes:
+      - ./commander/projects/social_posting/media:/usr/share/nginx/html:ro
+    networks:
+      - n8n-net
+    # Tunnel route: media.synai.ai -> media-server:80 (port 8056 on host)
+    # 4-hour media cleanup: cron on host removes files older than 4h
+    # UUID-in-path provides obscurity (accepted risk per Roberto's sign-off)
+
+  alm-quotes:
+    image: nginx:alpine
+    container_name: alm-quotes
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8210:80"
+    volumes:
+      - ./commander/projects/alm-quotes:/usr/share/nginx/html:ro
+    networks:
+      - n8n-net
+    # Tunnel route: alm-quotes.synai.ai -> alm-quotes:80 (port 8210 on host)
+    # Static quote-builder for Automation Lab Materials (Omar/Kamel Itani)
+
+  # ==========================================================================
+  # Matomo Analytics
+  # ==========================================================================
+  matomo-db:
+    image: mariadb:11
+    container_name: matomo-db
+    restart: always
+    environment:
+      MARIADB_DATABASE: matomo
+      MARIADB_USER: matomo
+      MARIADB_PASSWORD: ${MATOMO_DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MATOMO_DB_ROOT_PASSWORD}
+    volumes:
+      - matomo_db_data:/var/lib/mysql
+    networks:
+      - n8n-net
+
+  matomo:
+    image: matomo:5-apache
+    container_name: matomo
+    restart: always
+    depends_on:
+      - matomo-db
+    environment:
+      MATOMO_DATABASE_HOST: matomo-db
+      MATOMO_DATABASE_ADAPTER: mysql
+      MATOMO_DATABASE_TABLES_PREFIX: matomo_
+      MATOMO_DATABASE_USERNAME: matomo
+      MATOMO_DATABASE_PASSWORD: ${MATOMO_DB_PASSWORD}
+      MATOMO_DATABASE_DBNAME: matomo
+      PHP_MEMORY_LIMIT: 512M
+    ports:
+      - "127.0.0.1:8100:80"
+    volumes:
+      - matomo_data:/var/www/html
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  safeplate:
+    build:
+      context: ./commander/projects/safeplate
+      dockerfile: Dockerfile
+    container_name: safeplate
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3030:3000"
+    environment:
+      DATABASE_URL: "postgresql://n8n:n8n@postgres:5432/safeplate"
+      NODE_ENV: production
+      SESSION_SECRET: "${SAFEPLATE_SESSION_SECRET}"
+      TZ: America/Chicago
+    networks:
+      - n8n-net
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  obsidian:
+    image: lscr.io/linuxserver/obsidian:latest
+    container_name: obsidian
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      PUID: "1001"
+      PGID: "1001"
+      TZ: America/Chicago
+      TITLE: Obsidian
+      CUSTOM_RES_W: "1920"
+      CUSTOM_RES_H: "1080"
+      DRINODE: /dev/dri/renderD128
+    volumes:
+      - /home/mello/.config/obsidian-container:/config
+      - /home/mello/obsidian-vault:/vaults
+    ports:
+      - "127.0.0.1:8099:3000"
+    shm_size: "1gb"
+    networks:
+      - n8n-net
+
+volumes:
+
+  clickhouse_data:
+  n8n_data:
+    external: true
+  n8n_postgres_data:
+    external: true
+
+  nocodb_data:
+    external: true
+  # qdrant_data: REMOVED
+  surreal_data:
+    external: true
+  surreal_data_v3:
+  comfyui_data:
+  mcp_logs:
+  prometheus_data:
+  loki_data:
+  promtail_positions:
+  ollama_embed_data:
+  docuseal_data:
+  drinkwaretrove-cache:
+  mellobooks-uploads:
+  matomo_data:
+  matomo_db_data:
+  social_posting_media:
+  social_posting_packs:
+  stemdeck_cache:
+
+
+networks:
+  n8n-net:
+    external: true
