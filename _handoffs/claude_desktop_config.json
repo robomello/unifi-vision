@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mello-home-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.synai.ai/mcp"
+      ]
+    }
+  }
+}
