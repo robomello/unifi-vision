@@ -1305,6 +1305,9 @@ services:
       - /home/mello/agent-flow-data:/data
     networks:
       - n8n-net
+      # Claudicle's ClickHouse lives on its own network; join it so cost.py can
+      # reach http://claudicle-clickhouse:8123 for per-run cost/token enrichment.
+      - claudicle_default
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8063/healthz', timeout=3)"]
       interval: 30s
@@ -1835,4 +1838,6 @@ volumes:
 
 networks:
   n8n-net:
+    external: true
+  claudicle_default:
     external: true
