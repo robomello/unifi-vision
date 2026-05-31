@@ -1287,6 +1287,31 @@ services:
       retries: 3
       start_period: 30s
 
+  # Live node-flow observer for Claude Code agent runs (hook events -> SSE -> browser).
+  # Single worker (in-process SSE broker). Token-gated /ingest; reads are open behind the tunnel.
+  # Tunnel route: flow.synai.ai -> agent-flow:8063
+  agent-flow:
+    build:
+      context: ./commander/projects/agent-flow
+      dockerfile: Dockerfile
+    image: agent-flow:latest
+    container_name: agent-flow
+    restart: unless-stopped
+    env_file:
+      - ./commander/projects/agent-flow/.env
+    ports:
+      - "127.0.0.1:8063:8063"
+    volumes:
+      - /home/mello/agent-flow-data:/data
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8063/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   mello-garden:
     build:
       context: ./mello-garden
