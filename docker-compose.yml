@@ -362,12 +362,13 @@ services:
       TORCH_COMPILE_DISABLE: "1"
       COMFY_API_KEY: ${COMFY_API_KEY}
       LD_LIBRARY_PATH: "/usr/lib/x86_64-linux-gnu:/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+      CUDA_VISIBLE_DEVICES: "0,1"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: [ '0' ]
+              device_ids: [ '0', '1' ]
               capabilities: [ gpu ]
     networks:
       - n8n-net
@@ -425,8 +426,8 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_KEEP_ALIVE=5m
-      - OLLAMA_MAX_LOADED_MODELS=1
-      - OLLAMA_NUM_PARALLEL=32
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_NUM_PARALLEL=2
       - OLLAMA_FLASH_ATTENTION=1
     ports:
       - "127.0.0.1:11434:11434"
@@ -437,7 +438,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: [ '0' ]
+              device_ids: [ '0', '1' ]
               capabilities: [ gpu ]
     networks:
       - n8n-net
@@ -448,13 +449,13 @@ services:
     environment:
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_NUM_PARALLEL: "3"
-      NVIDIA_VISIBLE_DEVICES: "0"
+      NVIDIA_VISIBLE_DEVICES: "1"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: [ '0' ]
+              device_ids: [ '1' ]
               capabilities: [ gpu ]
     volumes:
       - ollama_embed_data:/root/.ollama
@@ -513,29 +514,31 @@ services:
       SAVE_SNAPSHOTS: "true"
       IMAGE_DIR: /data/street-camera/images
       DB_PATH: /data/street-camera/analytics.db
-      MIN_CONFIDENCE: "0.60"
       DAILY_REPORT_HOUR: "21"
       IMAGE_RETENTION_DAYS: "7"
       REPORT_PORT: "8097"
       PYTHONUNBUFFERED: 1
-      NVIDIA_VISIBLE_DEVICES: 0
-      COMFYUI_URL: http://comfyui:8188
-      OLLAMA_VLM_URL: http://ollama-embed:11434
-      OLLAMA_VLM_MODEL: qwen2.5vl:7b
+      NVIDIA_VISIBLE_DEVICES: 1
+      NVIDIA_DRIVER_CAPABILITIES: all  # 'video' needed only if RTSP_HWACCEL=cuda (NVDEC); harmless for default software decode
+      OLLAMA_VLM_URL: http://ollama:11434
+      OLLAMA_VLM_MODEL: gemma3:4b
+      GDINO_BOX_THRESHOLD: "0.20"
+      MIN_CONFIDENCE: "0.25"
       ALERT_URL: http://street-camera-bot:8098/alert
     volumes:
       - ./commander/projects/street-camera:/app
       - /data/street-camera:/data/street-camera
+      - /home/mello/.cache/street-camera-hf:/root/.cache
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0']
+              device_ids: ['1']
               capabilities: [gpu]
     depends_on:
       - street-camera-bot
-      - ollama-embed
+      - ollama
     networks:
       - n8n-net
 
@@ -842,7 +845,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: [ '0' ]
+              device_ids: [ '0', '1' ]
               capabilities: [ gpu, utility ]
     env_file:
       - ./.env
@@ -861,9 +864,12 @@ services:
       PG_DATABASE: n8n
       OCR_SERVER_URL: http://ocr-server:8057
       COMFYUI_API_URL: http://comfyui:8188
-      DEFAULT_MODEL: ${DEFAULT_MODEL:-claude:claude-opus-4-7}
-      CLAUDE_DEFAULT_MODEL: ${CLAUDE_DEFAULT_MODEL:-claude-opus-4-7}
-      CLAUDE_EFFORT: ${CLAUDE_EFFORT:-max}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-claude:claude-opus-4-8}
+      CLAUDE_DEFAULT_MODEL: ${CLAUDE_DEFAULT_MODEL:-claude-opus-4-8}
+      # Joey's reasoning effort. Uses a dedicated var (JOEY_EFFORT) so it is NOT
+      # hijacked by the ambient CLAUDE_EFFORT the Claude Code harness exports into
+      # subprocesses. Valid: low|medium|high|xhigh|max. Default: xhigh (Extra High).
+      CLAUDE_EFFORT: ${JOEY_EFFORT:-xhigh}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_PROJECT_ID: ${OPENAI_PROJECT_ID:-}
       OPENAI_ORG_ID: ${OPENAI_ORG_ID:-}
@@ -1031,7 +1037,10 @@ services:
       - /home/mello/.local/bin:/home/mello/.local/bin:ro
       - /home/mello/.local/share/claude:/home/mello/.local/share/claude:ro
       - /home/mello/.claude.json:/home/mello/.claude.json:ro
-      - /home/mello/.claude/.credentials.json:/home/mello/.claude/.credentials.json:ro
+      # Mount the whole ~/.claude DIR (not the single creds file): a single-file
+      # bind pins to one inode, so host-side OAuth token rotation (atomic rename)
+      # becomes invisible and the in-container CLI 401s on the stale token.
+      - /home/mello/.claude:/home/mello/.claude:rw
     networks:
       - n8n-net
 
@@ -1168,6 +1177,40 @@ services:
       retries: 3
       start_period: 10s
 
+  tts-service:
+    build:
+      context: ./commander/projects/tts-service
+    image: tts-service:latest
+    container_name: tts-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8096:8096"
+    volumes:
+      # /data paths are symmetric host<->container so output WAV paths match
+      - /data:/data
+      # Dedicated HF cache (Kokoro + F5 models) -- avoids root-owned files in ~mello/.cache
+      - /data/models/tts-hf-cache:/root/.cache/huggingface
+    environment:
+      PYTHONUNBUFFERED: 1
+    networks:
+      - n8n-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            # GPU 0 = Max-Q (light tasks); TTS deliberately runs parallel to
+            # ComfyUI image gen on the 600W card during pipeline phase 2.
+            - driver: nvidia
+              device_ids: [ '0' ]
+              capabilities: [ gpu ]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Lazy model load + first-request voice download (~330MB)
+      start_period: 120s
+
   videogen-factory:
     build:
       context: ./commander/projects/videogen-factory
@@ -1244,6 +1287,9 @@ services:
       PYTHONUNBUFFERED: 1
       SKOOL_ENGAGEMENTS_TABLE: ${SKOOL_ENGAGEMENTS_TABLE:-}
       SKOOL_GROUP_SETTINGS_TABLE: ${SKOOL_GROUP_SETTINGS_TABLE:-}
+      SKOOL_EXTRA_GROUPS: ${SKOOL_EXTRA_GROUPS:-}
+      ZAI_API_KEY: ${ZAI_API_KEY}
+      GLM_REPLY_MODEL: ${GLM_REPLY_MODEL:-glm-4.7}
       HOME: /home/mello
       CLAUDE_BIN: /home/mello/.local/bin/claude
     volumes:
@@ -1384,6 +1430,7 @@ services:
       TELEGRAM_NOTIFICATION_CHAT_ID: ${TELEGRAM_DEFAULT_CHAT_ID:-}
       GARDEN_API_BASE: http://mello-garden:3000
       GARDEN_INTERNAL_TOKEN: ${GARDEN_INTERNAL_TOKEN}
+      INBOX_HOST_DIR: /data/garden-telegram/inbox
       HOME_ASSISTANT_URL: http://192.168.2.120:8123
       HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN}
       TZ: America/Chicago
@@ -1394,10 +1441,14 @@ services:
     volumes:
       - /home/mello/commander/tools:/home/mello/commander/tools:ro
       - /data/garden-telegram/state:/app/data
+      - /data/garden-telegram/inbox:/app/inbox
       - /home/mello/.local/bin:/home/mello/.local/bin:ro
       - /home/mello/.local/share/claude:/home/mello/.local/share/claude:ro
       - /home/mello/.claude.json:/home/mello/.claude.json:ro
-      - /home/mello/.claude/.credentials.json:/home/mello/.claude/.credentials.json:ro
+      # Mount the whole ~/.claude DIR (not the single creds file): a single-file
+      # bind pins to one inode, so host-side OAuth token rotation (atomic rename)
+      # becomes invisible and the in-container CLI 401s on the stale token.
+      - /home/mello/.claude:/home/mello/.claude:rw
     networks:
       - n8n-net
 
@@ -1460,32 +1511,6 @@ services:
       - "127.0.0.1:3401:3000"
     depends_on:
       - mellobooks-api
-    networks:
-      - n8n-net
-
-  viqa:
-    build: ./commander/projects/viqa
-    container_name: viqa
-    restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: [ '0' ]
-              capabilities: [ gpu ]
-    ports:
-      - "192.168.3.60:3011:3011"
-    environment:
-      PYTHONUNBUFFERED: "1"
-      OLLAMA_URL: "http://ollama:11434"
-      VLM_MODEL: "gemma4:31b-it-q8_0"
-      BLUR_THRESHOLD: "80.0"
-      TRAINING_DIR: "/data/training/viqa"
-      OPERATOR_REVIEW: "false"
-    volumes:
-      - /data/training/viqa:/data/training/viqa
-      - /home/mello/mb_inspection/model_cache:/root/.cache
     networks:
       - n8n-net
 
@@ -1702,6 +1727,19 @@ services:
     # 4-hour media cleanup: cron on host removes files older than 4h
     # UUID-in-path provides obscurity (accepted risk per Roberto's sign-off)
 
+  twenty-knots:
+    image: nginx:alpine
+    container_name: twenty-knots
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8067:80"
+    volumes:
+      - ./commander/projects/twenty-knots/src:/usr/share/nginx/html:ro
+    networks:
+      - n8n-net
+    # Tunnel route: twentyknots.synai.ai -> twenty-knots:80 (port 8067 on host)
+    # 20th-anniversary keepsake for Gisele & Roberto. Static site, read-only mount.
+
   alm-quotes:
     image: nginx:alpine
     container_name: alm-quotes
@@ -1714,6 +1752,19 @@ services:
       - n8n-net
     # Tunnel route: alm-quotes.synai.ai -> alm-quotes:80 (port 8210 on host)
     # Static quote-builder for Automation Lab Materials (Omar/Kamel Itani)
+
+  synai-blog:
+    image: nginx:alpine
+    container_name: synai-blog
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8068:80"
+    volumes:
+      - ./commander/projects/synai-blog/dist:/usr/share/nginx/html:ro
+    networks:
+      - n8n-net
+    # Tunnel route: synai.ai + www.synai.ai (apex) -> synai-blog:80 (port 8068 on host)
+    # Roberto's personal blog (Astro static build). Posts authored in Obsidian.
 
   # ==========================================================================
   # Matomo Analytics
@@ -1805,6 +1856,112 @@ services:
     shm_size: "1gb"
     networks:
       - n8n-net
+
+  flight-tracker:
+    build:
+      context: ./commander/projects/flight-tracker
+    image: flight-tracker:latest
+    container_name: flight-tracker
+    user: "1001:1001"
+    restart: unless-stopped
+    env_file:
+      - /home/mello/.env
+    environment:
+      TZ: America/Chicago
+      LOG_LEVEL: INFO
+    volumes:
+      - /data/flight-tracker:/app/data
+    networks:
+      - n8n-net
+
+  flight-tracker-web:
+    image: flight-tracker:latest
+    container_name: flight-tracker-web
+    user: "1001:1001"
+    restart: unless-stopped
+    command: ["uvicorn", "dashboard:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      TZ: America/Chicago
+    volumes:
+      - /data/flight-tracker:/app/data:ro
+    ports:
+      - "127.0.0.1:8062:8000"
+    networks:
+      - n8n-net
+    depends_on:
+      - flight-tracker
+
+  # Hank — receipt-to-books for trade contractors (Next.js 14, standalone build).
+  # AI is fully LOCAL: ComfyUI Qwen3-VL (vision) + the `claude` CLI (reasoning).
+  # No API keys, no env_file — the CLI auths via the mounted ~/.claude credentials.
+  # Tunnel route: hank.synai.ai -> hank:3000
+  hank:
+    build:
+      context: /data/projects/hankbook/hank
+      dockerfile: Dockerfile
+    image: hank:latest
+    container_name: hank
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      TZ: Etc/GMT+6
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      NEXT_TELEMETRY_DISABLED: "1"
+      # claude CLI runs as uid 1001 (= host mello) with mello's mounted config.
+      HOME: /home/mello
+      PATH: "/home/mello/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      # Local vision engine (container-to-container; never localhost).
+      COMFYUI_URL: http://comfyui:8188
+      QWENVL_MODEL: Qwen3-VL-32B-Instruct
+      # claude CLI model aliases (haiku/sonnet/opus).
+      EXTRACT_MODEL: haiku
+      INSIGHTS_MODEL: sonnet
+      EXTRACT_RATE_LIMIT: "20"
+      INSIGHTS_RATE_LIMIT: "10"
+    volumes:
+      # Claude CLI for LLM calls (no ANTHROPIC_API_KEY — CLI-only per house policy).
+      # `.claude` and `.claude.json` MUST be rw: the CLI writes session/cache/debug
+      # files on every call; with :ro it hits EROFS and exits 0 with empty stdout.
+      - /home/mello/.local/bin:/home/mello/.local/bin:ro
+      - /home/mello/.local/share/claude:/home/mello/.local/share/claude:ro
+      - /home/mello/.claude.json:/home/mello/.claude.json:rw
+      - /home/mello/.claude:/home/mello/.claude:rw
+    ports:
+      - "127.0.0.1:3060:3000"
+    networks:
+      - n8n-net
+    healthcheck:
+      # Use 127.0.0.1, not localhost: inside the container localhost resolves to
+      # ::1 (IPv6) first, but the Next server binds IPv4 0.0.0.0 only.
+      # node -e fetch because bookworm-slim ships no wget/curl.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # Tunnel route: mellos.synai.ai -> mellos-hardware:8078 (Cloudflare Access protected)
+  # Editable hardware purchase plan for TheMellosDesigns Etsy shop.
+  mellos-hardware:
+    build:
+      context: ./commander/projects/mellos-designs/hardware-page
+      dockerfile: Dockerfile
+    image: mellos-hardware:latest
+    container_name: mellos-hardware
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8078:8078"
+    volumes:
+      - ./commander/projects/mellos-designs/hardware-page/data:/data
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8078/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
 
