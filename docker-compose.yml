@@ -522,8 +522,9 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: all  # 'video' needed only if RTSP_HWACCEL=cuda (NVDEC); harmless for default software decode
       OLLAMA_VLM_URL: http://ollama:11434
       OLLAMA_VLM_MODEL: gemma3:4b
-      GDINO_BOX_THRESHOLD: "0.20"
-      MIN_CONFIDENCE: "0.25"
+      GDINO_BOX_THRESHOLD: "0.25"
+      MIN_CONFIDENCE: "0.40"
+      MIN_BOX_AREA_FRAC: "0.0015"
       ALERT_URL: http://street-camera-bot:8098/alert
     volumes:
       - ./commander/projects/street-camera:/app
