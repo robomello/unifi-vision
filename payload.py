@@ -91,8 +91,27 @@ def _duplex_label(full_duplex) -> str:
     return "full" if full_duplex else "half"
 
 
-def port_attrs(port: dict, rx_bps: int, tx_bps: int) -> dict:
-    """Shape one raw port_table entry + computed bps into the card's port schema.
+def _parse_rate_bps(value) -> int:
+    """UniFi reports live per-port rate as `rx_bytes-r`/`tx_bytes-r` (float
+    bytes/sec), already computed by the switch/controller. Use this directly
+    instead of our own delta of the cumulative `rx_bytes`/`tx_bytes` counters:
+    those counters only update once per the device's controller-inform cycle
+    (tens of seconds, see `next_interval`), not every poll, so a naive
+    delta-over-5s reads 0 almost every cycle with one artificially inflated
+    spike whenever a fresh inform lands -- exactly reproducing the "Main
+    Panel Switch shows no transfer rate" bug even while it has real,
+    continuous traffic.
+    """
+    if value is None:
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def port_attrs(port: dict) -> dict:
+    """Shape one raw port_table entry into the card's port schema.
 
     Explicit `is None` checks throughout -- speed=0, up=False and rx_bps=0
     are legitimate values, not "missing", so `or`-style falsy defaulting
@@ -111,8 +130,8 @@ def port_attrs(port: dict, rx_bps: int, tx_bps: int) -> dict:
         "speed": speed if speed is not None else 0,
         "duplex": _duplex_label(port.get("full_duplex")),
         "poe_w": _parse_poe_w(port.get("poe_power")),
-        "rx_bps": rx_bps,
-        "tx_bps": tx_bps,
+        "rx_bps": _parse_rate_bps(port.get("rx_bytes-r")),
+        "tx_bps": _parse_rate_bps(port.get("tx_bytes-r")),
         "media": media if media is not None else "?",
     }
 

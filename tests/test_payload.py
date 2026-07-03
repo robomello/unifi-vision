@@ -127,8 +127,10 @@ class TestPortAttrs:
             "full_duplex": True,
             "poe_power": "5.81",
             "media": "GE",
+            "rx_bytes-r": 12000.7,
+            "tx_bytes-r": 4000.2,
         }
-        result = port_attrs(port, rx_bps=12000, tx_bps=4000)
+        result = port_attrs(port)
         assert result == {
             "idx": 1,
             "name": "Port 1",
@@ -143,47 +145,75 @@ class TestPortAttrs:
 
     def test_half_duplex(self):
         port = {"port_idx": 1, "name": "Port 1", "up": True, "speed": 100, "full_duplex": False, "media": "GE"}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["duplex"] == "half"
 
     def test_missing_full_duplex_defaults_to_unknown(self):
         port = {"port_idx": 1, "name": "Port 1", "up": False, "speed": 0, "media": "GE"}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["duplex"] == "?"
 
     def test_missing_poe_power_defaults_zero(self):
         port = {"port_idx": 25, "name": "SFP 1", "up": False, "speed": 0, "media": "SFP"}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["poe_w"] == 0.0
 
     def test_none_poe_power_defaults_zero(self):
         port = {"port_idx": 25, "name": "SFP 1", "up": False, "speed": 0, "poe_power": None, "media": "SFP"}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["poe_w"] == 0.0
 
     def test_string_poe_power_parsed_to_float(self):
         port = {"port_idx": 6, "name": "Port 6", "up": True, "speed": 100, "poe_power": "1.20", "media": "GE"}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["poe_w"] == 1.2
 
     def test_unparseable_poe_power_defaults_zero(self):
         port = {"port_idx": 6, "name": "Port 6", "up": True, "speed": 100, "poe_power": "n/a", "media": "GE"}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["poe_w"] == 0.0
 
     def test_missing_media_defaults_to_unknown(self):
         port = {"port_idx": 1, "name": "Port 1", "up": True, "speed": 1000}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["media"] == "?"
 
     def test_zero_rx_tx_bps_preserved_not_defaulted(self):
         """0 is a legitimate value and must not be treated as falsy-missing."""
         port = {"port_idx": 1, "name": "Port 1", "up": False, "speed": 0, "media": "GE"}
-        result = port_attrs(port, rx_bps=0, tx_bps=0)
+        result = port_attrs(port)
         assert result["rx_bps"] == 0
         assert result["tx_bps"] == 0
         assert result["speed"] == 0
         assert result["up"] is False
+
+    def test_missing_rate_fields_default_zero(self):
+        """Older firmware or a device mid-inform might omit rx_bytes-r/tx_bytes-r."""
+        port = {"port_idx": 1, "name": "Port 1", "up": True, "speed": 1000, "media": "GE"}
+        result = port_attrs(port)
+        assert result["rx_bps"] == 0
+        assert result["tx_bps"] == 0
+
+    def test_rate_fields_truncated_to_int(self):
+        port = {"port_idx": 1, "name": "Port 1", "up": True, "speed": 1000, "media": "GE",
+                "rx_bytes-r": 638996.7744809765, "tx_bytes-r": 26245.21072796935}
+        result = port_attrs(port)
+        assert result["rx_bps"] == 638996
+        assert result["tx_bps"] == 26245
+
+    def test_negative_rate_field_clamped_to_zero(self):
+        port = {"port_idx": 1, "name": "Port 1", "up": True, "speed": 1000, "media": "GE",
+                "rx_bytes-r": -5.0, "tx_bytes-r": 0}
+        result = port_attrs(port)
+        assert result["rx_bps"] == 0
+        assert result["tx_bps"] == 0
+
+    def test_unparseable_rate_field_defaults_zero(self):
+        port = {"port_idx": 1, "name": "Port 1", "up": True, "speed": 1000, "media": "GE",
+                "rx_bytes-r": "n/a", "tx_bytes-r": None}
+        result = port_attrs(port)
+        assert result["rx_bps"] == 0
+        assert result["tx_bps"] == 0
 
 
 class TestAttrsPayload:

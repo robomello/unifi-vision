@@ -1,9 +1,16 @@
-"""Main poll loop: fetch -> filter -> deltas -> payloads -> publish.
+"""Main poll loop: fetch -> filter -> payloads -> publish.
 
 All exceptions are caught inside the loop with exponential backoff (capped
 at MAX_BACKOFF_SEC) -- the container's `restart: unless-stopped` is the only
 supervisor, so this process must never crash-loop on a transient UDM Pro or
 MQTT hiccup.
+
+Per-port rx/tx rate comes straight from UniFi's own `rx_bytes-r`/`tx_bytes-r`
+fields (see payload.py::_parse_rate_bps) -- NOT a delta we compute ourselves.
+An earlier version delta'd the cumulative `rx_bytes`/`tx_bytes` counters over
+each 5s poll, which reads 0 almost every cycle because those counters only
+update once per the device's controller-inform cycle (tens of seconds), not
+every poll -- switches with real continuous traffic showed no rate at all.
 
 LWT note: see mqtt_publisher.py docstring. A single poller-health LWT covers
 "the whole poller died"; graceful shutdown (SIGTERM) additionally publishes
@@ -15,7 +22,6 @@ import logging
 import time
 
 from config import Config
-from deltas import DeltaTracker
 from filter import select_switches
 from mqtt_publisher import MqttPublisher
 from payload import (
@@ -63,8 +69,8 @@ def _switch_identity(sw: dict) -> tuple[str, str, str]:
     return name, mac if mac is not None else "", model if model is not None else "unknown"
 
 
-def poll_once(client: UniFiClient, tracker: DeltaTracker, publisher: MqttPublisher, cfg: Config) -> None:
-    """One fetch -> filter -> deltas -> publish cycle for every configured switch."""
+def poll_once(client: UniFiClient, publisher: MqttPublisher, cfg: Config) -> None:
+    """One fetch -> filter -> publish cycle for every configured switch."""
     devices = client.stat_device()
     switches = select_switches(devices, cfg.switch_macs)
 
@@ -77,15 +83,10 @@ def poll_once(client: UniFiClient, tracker: DeltaTracker, publisher: MqttPublish
         shaped_ports = []
         up_count = 0
         for raw_port in raw_ports:
-            port_idx = raw_port.get("port_idx")
-            if port_idx is None:
-                # malformed entry; skipping keeps (mac, idx) delta buckets from colliding
+            if raw_port.get("port_idx") is None:
                 logger.warning("switch %s: port entry without port_idx skipped", name)
                 continue
-            rx_bytes = raw_port.get("rx_bytes") if raw_port.get("rx_bytes") is not None else 0
-            tx_bytes = raw_port.get("tx_bytes") if raw_port.get("tx_bytes") is not None else 0
-            rx_bps, tx_bps = tracker.sample(mac, port_idx, rx_bytes, tx_bytes)
-            shaped_ports.append(port_attrs(raw_port, rx_bps, tx_bps))
+            shaped_ports.append(port_attrs(raw_port))
             if raw_port.get("up"):
                 up_count += 1
 
@@ -132,13 +133,12 @@ def _startup(client: UniFiClient, publisher: MqttPublisher, cfg: Config) -> list
 def run(client: UniFiClient, publisher: MqttPublisher, cfg: Config) -> None:
     switches = _startup(client, publisher, cfg)
 
-    tracker = DeltaTracker()
     backoff = cfg.poll_sec
 
     try:
         while True:
             try:
-                poll_once(client, tracker, publisher, cfg)
+                poll_once(client, publisher, cfg)
                 backoff = cfg.poll_sec
             except Exception as exc:  # noqa: BLE001 - poller must never crash-loop
                 logger.error("poll cycle failed: %s", exc, exc_info=True)
