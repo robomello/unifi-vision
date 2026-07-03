@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<!--
+  dev-preview.html — standalone preview for unifi-switch-card.js.
+  NOT deployed to Home Assistant. Serve locally:
+      cd card/ && python3 -m http.server 8930
+  then open the page from a browser on the LAN.
+  Stubs a hass object with realistic unifi-vision poller data
+  (Shop Switch: 14/26 up, mixed 100M/1G, PoE 1-6W) and exercises:
+  all six PORT_GEOMETRY models, generic fallback, stale + offline ribbons,
+  light theme, tooltips, and live rx/tx flash-tier updates every 3s.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>unifi-switch-card dev preview</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #111318;
+      font-family: sans-serif;
+      --card-background-color: #1c1c1e;
+      --primary-text-color: #e8eaed;
+      --ha-card-border-radius: 12px;
+    }
+    .col { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+    h1 { color: #e8eaed; font-size: 16px; font-weight: 600; }
+    .light {
+      background: #fafafa;
+      padding: 12px;
+      border-radius: 14px;
+      --card-background-color: #ffffff;
+      --primary-text-color: #212121;
+    }
+    .note { color: #8a919a; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="col">
+    <h1>unifi-switch-card — dev preview</h1>
+    <p class="note">Hover a port for the tooltip, click/tap to pin it. Shop Switch rx/tx + ts refresh every 3s.
+      "Bridge Garage" is intentionally stale (STALE ribbon), "Helium" is unavailable (OFFLINE ribbon),
+      "Mystery" uses an unknown model (generic fallback). Last card renders on a light theme.</p>
+    <div id="cards"></div>
+  </div>
+
+  <script src="unifi-switch-card.js"></script>
+  <script>
+    'use strict';
+
+    function port(idx, over) {
+      const base = {
+        idx,
+        name: `Port ${idx}`,
+        up: false,
+        speed: 0,
+        duplex: '?',
+        poe_w: 0,
+        rx_bps: 0,
+        tx_bps: 0,
+        media: 'GE',
+      };
+      return Object.assign({}, base, over ?? {});
+    }
+
+    // Shop Switch (US24P250): 14/26 up — 12 RJ45 + 2 SFP, mixed 100M/1G, PoE 1-6W.
+    function shopPorts() {
+      const ports = [];
+      const upRj45 = [1, 2, 3, 5, 7, 8, 11, 12, 15, 17, 20, 24];
+      const speeds = { 3: 100, 15: 100, 20: 10 }; // legacy links -> amber
+      const poe = { 1: 3.2, 5: 6.4, 7: 1.4, 11: 4.8 }; // cameras / APs
+      const traffic = { 1: 2400000, 2: 512000, 3: 45000, 5: 1800000, 7: 300, 8: 90000 };
+      for (let i = 1; i <= 24; i += 1) {
+        const up = upRj45.includes(i);
+        ports.push(port(i, {
+          name: poe[i] !== undefined ? `Cam/AP ${i}` : `Port ${i}`,
+          up,
+          speed: up ? (speeds[i] ?? 1000) : 0,
+          duplex: up ? 'full' : '?',
+          poe_w: poe[i] ?? 0,
+          rx_bps: up ? Math.round((traffic[i] ?? 800) * (0.8 + Math.random() * 0.4)) : 0,
+          tx_bps: up ? Math.round(((traffic[i] ?? 800) / 3) * (0.8 + Math.random() * 0.4)) : 0,
+        }));
+      }
+      ports.push(port(25, { name: 'Uplink Core', up: true, speed: 10000, duplex: 'full', rx_bps: 5200000, tx_bps: 4100000, media: 'SFP' }));
+      ports.push(port(26, { name: 'SFP 2', up: true, speed: 1000, duplex: 'full', rx_bps: 200, tx_bps: 120, media: 'SFP' }));
+      return ports;
+    }
+
+    function simplePorts(total, upList, sfpIdx) {
+      const ports = [];
+      for (let i = 1; i <= total; i += 1) {
+        const up = upList.includes(i);
+        const isSfp = (sfpIdx ?? []).includes(i);
+        ports.push(port(i, {
+          name: isSfp ? `SFP+ ${i}` : `Port ${i}`,
+          up,
+          speed: up ? (isSfp ? 10000 : 1000) : 0,
+          duplex: up ? 'full' : '?',
+          poe_w: up ? (i % 3 === 0 ? 2.5 : 0) : 0,
+          rx_bps: up ? 40000 * i : 0,
+          tx_bps: up ? 9000 * i : 0,
+          media: isSfp ? 'SFP' : 'GE',
+        }));
+      }
+      return ports;
+    }
+
+    const nowS = () => Math.floor(Date.now() / 1000);
+
+    function entity(name, model, ports, ts, state) {
+      const up = ports.filter((p) => p.up).length;
+      return {
+        state: state ?? `${up}/${ports.length}`,
+        attributes: { friendly_name: name, model, mac: '00:00:00:00:00:00', ports, ts },
+      };
+    }
+
+    function buildStates() {
+      return {
+        'sensor.unifi_vision_shop_switch': entity('Shop Switch', 'US24P250', shopPorts(), nowS()),
+        'sensor.unifi_vision_main_panel_switch': entity('Main Panel Switch', 'US8P150', simplePorts(10, [1, 2, 4, 9], [9, 10]), nowS()),
+        'sensor.unifi_vision_us_8_60w': entity('US-8-60W', 'US8P60', simplePorts(8, [1, 3, 4]), nowS()),
+        'sensor.unifi_vision_theater_switch': entity('Theater Switch', 'USF5P', simplePorts(5, [1, 2, 5]), nowS()),
+        'sensor.unifi_vision_bridge_garage_up_switch': entity('Bridge Garage UP', 'USL16LP', simplePorts(16, [1, 2, 5, 8, 13]), nowS() - 300), // stale
+        'sensor.unifi_vision_helium_switches': entity('Helium Switches', 'US8P60', simplePorts(8, []), nowS(), 'unavailable'), // offline
+        'sensor.unifi_vision_mello_home': entity('Mello Home', 'UDMPRO', simplePorts(11, [1, 3, 7, 10, 11], [9, 10]), nowS()),
+        'sensor.unifi_vision_mystery': entity('Mystery Switch', 'USXXL99', simplePorts(12, [2, 3, 7]), nowS()),
+      };
+    }
+
+    const configs = [
+      { entity: 'sensor.unifi_vision_shop_switch' },
+      { entity: 'sensor.unifi_vision_main_panel_switch' },
+      { entity: 'sensor.unifi_vision_us_8_60w', show_poe: false, title: 'US-8-60W (show_poe: false)' },
+      { entity: 'sensor.unifi_vision_theater_switch' },
+      { entity: 'sensor.unifi_vision_bridge_garage_up_switch' },
+      { entity: 'sensor.unifi_vision_helium_switches' },
+      { entity: 'sensor.unifi_vision_mello_home' },
+      { entity: 'sensor.unifi_vision_mystery', title: 'Unknown model (generic fallback)' },
+    ];
+
+    const holder = document.getElementById('cards');
+    holder.style.display = 'flex';
+    holder.style.flexDirection = 'column';
+    holder.style.gap = '16px';
+
+    const cards = configs.map((cfg, i) => {
+      const el = document.createElement('unifi-switch-card');
+      el.setConfig(cfg);
+      if (i === configs.length - 1) {
+        const box = document.createElement('div');
+        box.className = 'light';
+        box.appendChild(el);
+        holder.appendChild(box);
+      } else {
+        holder.appendChild(el);
+      }
+      return el;
+    });
+
+    function push() {
+      const hass = { states: buildStates() };
+      for (const card of cards) card.hass = hass;
+    }
+
+    push();
+    setInterval(push, 3000); // fresh ts + jittered traffic -> exercises re-render path
+  </script>
+</body>
+</html>
