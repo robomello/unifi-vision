@@ -543,6 +543,33 @@ services:
     networks:
       - n8n-net
 
+  unifi-vision:
+    build:
+      context: ./commander/projects/unifi-vision
+    image: unifi-vision:latest
+    container_name: unifi-vision
+    restart: unless-stopped
+    # no env_file: needs only the vars below, not the whole .env secret store
+    environment:
+      UNIFI_HOST: ${UNIFI_HOST}
+      UNIFI_USER: ${UNIFI_USER}
+      UNIFI_PASS: ${UNIFI_PASS}
+      UNIFI_SITE: ${UNIFI_SITE}
+      MQTT_HOST: ${UNIFI_VISION_MQTT_HOST}
+      MQTT_USER: ${UNIFI_VISION_MQTT_USER}
+      MQTT_PASS: ${UNIFI_VISION_MQTT_PASS}
+      SWITCH_MACS: ""          # empty = all usw + udm
+      POLL_SEC: "5"
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./commander/projects/unifi-vision:/app:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - n8n-net
+
   street-camera-bot:
     build:
       context: ./commander/projects/street-camera-bot
@@ -1963,6 +1990,33 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Public unauthenticated file sharing. Anyone can create a share (upload)
+  # without an account; downloads need only the link + optional per-share
+  # password the uploader sets. Admin account (Roberto) owns global config.
+  # Abuse guards (max size, forced expiry) set in /admin/config after first boot.
+  # Tunnel route: share.synai.ai -> pingvin-share:3000
+  pingvin-share:
+    image: stonith404/pingvin-share:latest
+    container_name: pingvin-share
+    restart: unless-stopped
+    environment:
+      # Correct client IP + secure cookies behind the Cloudflare tunnel.
+      TRUST_PROXY: "true"
+    volumes:
+      # SQLite DB + uploaded files. Host bind so data survives recreation.
+      - /data/pingvin-share:/opt/app/backend/data
+    ports:
+      # Loopback only — public access is via the tunnel, this is for debugging.
+      - "127.0.0.1:3017:3000"
+    networks:
+      - n8n-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
 
