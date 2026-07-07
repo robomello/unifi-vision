@@ -429,6 +429,7 @@ services:
       - OLLAMA_MAX_LOADED_MODELS=2
       - OLLAMA_NUM_PARALLEL=2
       - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_SCHED_SPREAD=true
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
@@ -1573,6 +1574,8 @@ services:
       TZ: America/Chicago
       AUTH_PASSWORD: ${AI_PSYCHOLOGIST_PASSWORD}
       SESSION_SECRET: ${AI_PSYCHOLOGIST_SESSION_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      ADMIN_EMAIL: robomello79@gmail.com
       COMFYUI_INPUT_DIR: /comfyui-input
       COMFYUI_OUTPUT_DIR: /comfyui-output
       AUDIO_DIR: /data/sites/ai-psychologist/audio
