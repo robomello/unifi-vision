@@ -1,0 +1,7 @@
+---
+name: Ideogram 4 local weights: baked-in safety filter renders gray card
+description: Ideogram 4 ComfyUI model refuses some prompts by generating a gray 'blocked by safety filter' card; deterministic per prompt content, reword to fix
+type: reference
+---
+
+The local Ideogram 4 open weights (ideogram4/ideogram4_fp8_scaled.safetensors + unconditional pair, KJ dual-UNET graph) have a SAFETY FILTER BAKED INTO THE WEIGHTS: blocked prompts render a flat gray card reading "Image blocked by safety filter" instead of erroring. Verified 2026-06-11: trigger is deterministic per PROMPT CONTENT - not seed, not resolution, not quoted sign text (tested all three single-variable). Example: "vintage diner at night, neon sign... glowing pink cursive, rain-slicked street" blocks every time, while a similar coffee-shop prompt passes at any resolution/seed. Fix is rewording the prompt. Implications: DreamVault bot Spicy/Explicit styles will return the gray card on ideogram4 (model refuses NSFW in-weights); occasional false positives on benign prompts - retry with different wording, not a new seed. Available via run_ideogram4() in commander/tools/comfyui_image.py (~90-100s per image incl. model staging, ~26GB VRAM, best at ~1MP). Example blocked/passed outputs: ComfyUI/output/dreamvault-ideogram4_0000{1,3,4,5}_.png (blocked) vs 0000{2,6}_.png (passed).

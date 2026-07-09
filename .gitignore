@@ -1,0 +1,83 @@
+# /home/mello/ is a git repo — prevent secret leaks on any stray `git add`.
+# Keep this file tight: block everything sensitive, allow nothing by default
+# for dotfiles that might hold creds.
+
+# Secrets & env
+.env
+.env.*
+!.env.example
+!.env.sample
+*.env
+*secret*
+*secrets*
+*_token.json
+*token*.json
+credentials.json
+client_secret*.json
+client_secrets*.json
+
+# Credential / cookie stores
+.credentials/
+.cookies/
+.ssh/
+.gnupg/
+.cloudflared/
+.pki/
+.config/gh/
+.config/*/credentials
+.config/*/config.json
+.docker/config.json
+.npmrc
+.netrc
+.aws/
+.gcloud/
+.azure/
+.kube/config
+.vscode-server/
+.claude.json
+.claude.json.backup
+.claude.json.bak
+
+# Shell / state
+.bash_history
+.bash_history-*
+.zsh_history
+.python_history
+.node_repl_history
+.lesshst
+.wget-hsts
+.sudo_as_admin_successful
+.state/
+
+# Large / generated
+.cache/
+.npm/
+.nvm/
+.venv/
+.venvs/
+.ollama/
+node_modules/
+__pycache__/
+*.pyc
+.dotnet/
+.nv/
+.triton/
+.bun/
+.local/share/
+.local/state/
+Downloads/
+Temp/
+
+# Editors / servers
+.antigravity-server/
+.qoder-server/
+.cursor-server/
+.idea/
+.vscode/
+
+# Backups
+backups/
+*.bak
+*.backup
+*~
+obsidian-vault/Main/99-Archive/claude-memory-original-files/.sync_state.json

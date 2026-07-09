@@ -1,0 +1,9 @@
+---
+name: Playwright hangs on networkidle against apps with a persistent WebSocket (e.g. Home Assistant)
+description: browser-agent drifted to Playwright despite a "Lightpanda only" preference; agent definition file still hardcodes Playwright+networkidle -- flagged to Roberto, not silently fixed
+type: feedback
+---
+
+CORRECTION 2026-07-03: browser-agent should never be using Playwright at all -- see [Browser Agent](feedback_browser_agent.md), an existing memory stating "browser-agent uses Lightpanda only, never Playwright." During the unifi-vision session I dispatched browser-agent and it defaulted to Playwright anyway, which is what triggered the hang below. Root cause of the drift: `~/.claude/agents/browser-agent.md` (the actual agent definition) still hardcodes Playwright as its base pattern, INCLUDING `wait_until="networkidle"` in its own template -- so the Lightpanda-only preference was never applied to the agent file itself. Flagged to Roberto rather than silently rewritten (agent-definition changes are his call). If/when the agent is migrated to Lightpanda, check whether Lightpanda has an equivalent networkidle-style pitfall against websocket-holding SPAs before assuming this specific fix carries over.
+
+Original finding (still useful background, but describes a Playwright workaround that shouldn't have been necessary): Playwright browser automation against Home Assistant (or any app holding a persistent WebSocket open) hangs forever if you wait on 'networkidle' — the connection never goes idle, so page.goto({waitUntil:'networkidle'}) or waitForLoadState('networkidle') times out even though the page loaded fine. Fix used at the time: waitUntil:'domcontentloaded' for navigation, then explicitly wait for a specific DOM selector with a bounded timeout, instead of any idle-based wait.
