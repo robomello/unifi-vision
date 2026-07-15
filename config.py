@@ -109,7 +109,7 @@ def load_config(env_file_path: Path = ENV_PATH) -> Config:
         raise RuntimeError(f"unifi-vision config missing required env vars: {', '.join(missing)}")
 
     return Config(
-        unifi_host=_get(file_env, "UNIFI_HOST", "https://192.168.2.1"),
+        unifi_host=_get(file_env, "UNIFI_HOST", "https://192.168.1.1"),
         unifi_user=unifi_user,
         unifi_pass=unifi_pass,
         unifi_site=_get(file_env, "UNIFI_SITE", "default"),

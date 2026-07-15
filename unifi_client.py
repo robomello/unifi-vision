@@ -1,8 +1,8 @@
 """UDM Pro auth + stat/device fetch. Read-only (GET only, no write endpoints).
 
-Auth pattern copied from `commander/tools/unifi_network.py` (cookie session +
-X-CSRF-Token, POST /api/auth/login). Adds a re-login-once-on-401 retry since
-the poller runs unattended for long stretches and UniFi sessions expire.
+Uses the UniFi OS cookie-session flow with an X-CSRF-Token and
+POST /api/auth/login. Adds a re-login-once-on-401 retry since the poller runs
+unattended for long stretches and UniFi sessions expire.
 """
 from __future__ import annotations
 

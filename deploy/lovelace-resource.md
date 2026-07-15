@@ -6,7 +6,8 @@ the card is well under the 800-line limit).
 
 ## 1. Deploy the file to Home Assistant
 
-Copy the card to the HA config share (Task 4 / `deploy-card.sh` owns the transport):
+Copy the card to the Home Assistant config share using Samba, SSH, or your
+preferred deployment method:
 
 ```
 /config/www/unifi-vision/unifi-switch-card.js
@@ -44,12 +45,12 @@ copy of a new `unifi-switch-card.js` to `/config/www/unifi-vision/`:
 2. Hard-refresh the browser (Ctrl+Shift+R). In the companion app:
    Settings -> Companion App -> Debugging -> **Reset frontend cache**.
 
-If you skip the `?v=` bump, the browser serves the stale card and any verification
-(screenshots, Task 5) tests the OLD file. Bump first, verify second.
+If you skip the `?v=` bump, the browser may serve the previous card version.
+Bump first, verify second.
 
 ## 4. Add the dashboard view
 
 Paste `deploy/network-view.yaml` as a new view in the dashboard raw configuration
-editor (one `custom:unifi-switch-card` per switch, Shop Switch on top). If the card
+editor (one `custom:unifi-switch-card` per switch). If the card
 shows a red "Custom element doesn't exist: unifi-switch-card" box, the resource is not
 loaded yet — re-check step 2 and hard-refresh.

@@ -1,8 +1,8 @@
 """Shared pytest fixtures for unifi-vision tests.
 
-The device fixtures below are a redacted/trimmed capture of one live UDM Pro
-`stat/device` response (2026-07-03). MACs are replaced with placeholder
-values; only the keys the poller actually reads are kept.
+The device fixtures below are sanitized examples modeled after a UniFi
+`stat/device` response. Names and MACs are fictitious, and only the keys the
+poller actually reads are kept.
 """
 from __future__ import annotations
 
@@ -124,11 +124,11 @@ def _us8p60() -> dict:
     }
 
 
-def _mello_home_udm() -> dict:
+def _home_gateway_udm() -> dict:
     """udm / UDMPRO: GE port + SFP+ uplink."""
     return {
         "type": "udm",
-        "name": "Mello Home",
+        "name": "Home Gateway",
         "model": "UDMPRO",
         "mac": UDMPRO_MAC,
         "port_table": [
@@ -164,7 +164,7 @@ def _access_point() -> dict:
     """uap: not a switch, must be excluded by select_switches()."""
     return {
         "type": "uap",
-        "name": "Living Room Wall",
+        "name": "Office AP",
         "model": "UHDIW",
         "mac": AP_MAC,
         "port_table": [],
@@ -183,7 +183,7 @@ def us8p60_switch() -> dict:
 
 @pytest.fixture
 def udm_pro() -> dict:
-    return copy.deepcopy(_mello_home_udm())
+    return copy.deepcopy(_home_gateway_udm())
 
 
 @pytest.fixture

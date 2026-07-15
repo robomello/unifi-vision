@@ -1,16 +1,11 @@
 # unifi-vision — Home Assistant "Network" dashboard view
 #
-# This is ONE view. Add it under `views:` in the dashboard raw config editor
-# (dashboard -> pencil -> three-dot menu -> "Raw configuration editor"),
-# or copy the `cards:` block into a new view created in the UI.
+# Add this view under `views:` in the dashboard raw configuration editor, or
+# copy the `cards:` block into a view created in the UI.
 #
-# Requires the Lovelace resource to be registered first — see
-# deploy/lovelace-resource.md (/local/unifi-vision/unifi-switch-card.js?v=N).
-#
-# Entities are published by the unifi-vision poller via MQTT discovery.
-# `title` is optional (defaults to the entity friendly_name); shown here
-# explicitly for determinism. Per-card options: show_poe (default true),
-# led_mode: auto | static | off.
+# Register the Lovelace resource first; see deploy/lovelace-resource.md.
+# Replace the example entity IDs below with the entities created by MQTT
+# discovery for your own switches.
 
 title: Network
 path: network
@@ -19,23 +14,11 @@ cards:
   - type: vertical-stack
     cards:
       - type: custom:unifi-switch-card
-        entity: sensor.unifi_vision_shop_switch
-        title: Shop Switch
+        entity: sensor.unifi_vision_core_switch
+        title: Core Switch
       - type: custom:unifi-switch-card
-        entity: sensor.unifi_vision_main_panel_switch
-        title: Main Panel Switch
+        entity: sensor.unifi_vision_access_switch
+        title: Access Switch
       - type: custom:unifi-switch-card
-        entity: sensor.unifi_vision_us_8_60w
-        title: US-8-60W
-      - type: custom:unifi-switch-card
-        entity: sensor.unifi_vision_theater_switch
-        title: Theater Switch
-      - type: custom:unifi-switch-card
-        entity: sensor.unifi_vision_bridge_garage_up_switch
-        title: Bridge Garage UP Switch
-      - type: custom:unifi-switch-card
-        entity: sensor.unifi_vision_helium_switches
-        title: Helium Switches
-      - type: custom:unifi-switch-card
-        entity: sensor.unifi_vision_mello_home
-        title: Mello Home
+        entity: sensor.unifi_vision_home_gateway
+        title: Home Gateway

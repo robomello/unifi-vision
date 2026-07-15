@@ -5,7 +5,7 @@
       cd card/ && python3 -m http.server 8930
   then open the page from a browser on the LAN.
   Stubs a hass object with realistic unifi-vision poller data
-  (Shop Switch: 14/26 up, mixed 100M/1G, PoE 1-6W) and exercises:
+  (Core Switch: 14/26 up, mixed 100M/1G, PoE 1-6W) and exercises:
   all six PORT_GEOMETRY models, generic fallback, stale + offline ribbons,
   light theme, tooltips, and live rx/tx flash-tier updates every 3s.
 -->
@@ -39,8 +39,8 @@
 <body>
   <div class="col">
     <h1>unifi-switch-card — dev preview</h1>
-    <p class="note">Hover a port for the tooltip, click/tap to pin it. Shop Switch rx/tx + ts refresh every 3s.
-      "Bridge Garage" is intentionally stale (STALE ribbon), "Helium" is unavailable (OFFLINE ribbon),
+    <p class="note">Hover a port for the tooltip, click/tap to pin it. Core Switch rx/tx + ts refresh every 3s.
+      "Remote Switch" is intentionally stale (STALE ribbon), "Offline Switch" is unavailable (OFFLINE ribbon),
       "Mystery" uses an unknown model (generic fallback). Last card renders on a light theme.</p>
     <div id="cards"></div>
   </div>
@@ -64,7 +64,7 @@
       return Object.assign({}, base, over ?? {});
     }
 
-    // Shop Switch (US24P250): 14/26 up — 12 RJ45 + 2 SFP, mixed 100M/1G, PoE 1-6W.
+    // Core Switch (US24P250): 14/26 up — 12 RJ45 + 2 SFP, mixed 100M/1G, PoE 1-6W.
     function shopPorts() {
       const ports = [];
       const upRj45 = [1, 2, 3, 5, 7, 8, 11, 12, 15, 17, 20, 24];
@@ -119,25 +119,25 @@
 
     function buildStates() {
       return {
-        'sensor.unifi_vision_shop_switch': entity('Shop Switch', 'US24P250', shopPorts(), nowS()),
-        'sensor.unifi_vision_main_panel_switch': entity('Main Panel Switch', 'US8P150', simplePorts(10, [1, 2, 4, 9], [9, 10]), nowS()),
-        'sensor.unifi_vision_us_8_60w': entity('US-8-60W', 'US8P60', simplePorts(8, [1, 3, 4]), nowS()),
-        'sensor.unifi_vision_theater_switch': entity('Theater Switch', 'USF5P', simplePorts(5, [1, 2, 5]), nowS()),
-        'sensor.unifi_vision_bridge_garage_up_switch': entity('Bridge Garage UP', 'USL16LP', simplePorts(16, [1, 2, 5, 8, 13]), nowS() - 300), // stale
-        'sensor.unifi_vision_helium_switches': entity('Helium Switches', 'US8P60', simplePorts(8, []), nowS(), 'unavailable'), // offline
-        'sensor.unifi_vision_mello_home': entity('Mello Home', 'UDMPRO', simplePorts(11, [1, 3, 7, 10, 11], [9, 10]), nowS()),
+        'sensor.unifi_vision_core_switch': entity('Core Switch', 'US24P250', shopPorts(), nowS()),
+        'sensor.unifi_vision_access_switch': entity('Access Switch', 'US8P150', simplePorts(10, [1, 2, 4, 9], [9, 10]), nowS()),
+        'sensor.unifi_vision_desk_switch': entity('Desk Switch', 'US8P60', simplePorts(8, [1, 3, 4]), nowS()),
+        'sensor.unifi_vision_media_switch': entity('Media Switch', 'USF5P', simplePorts(5, [1, 2, 5]), nowS()),
+        'sensor.unifi_vision_remote_switch': entity('Remote Switch', 'USL16LP', simplePorts(16, [1, 2, 5, 8, 13]), nowS() - 300), // stale
+        'sensor.unifi_vision_offline_switch': entity('Offline Switch', 'US8P60', simplePorts(8, []), nowS(), 'unavailable'), // offline
+        'sensor.unifi_vision_home_gateway': entity('Home Gateway', 'UDMPRO', simplePorts(11, [1, 3, 7, 10, 11], [9, 10]), nowS()),
         'sensor.unifi_vision_mystery': entity('Mystery Switch', 'USXXL99', simplePorts(12, [2, 3, 7]), nowS()),
       };
     }
 
     const configs = [
-      { entity: 'sensor.unifi_vision_shop_switch' },
-      { entity: 'sensor.unifi_vision_main_panel_switch' },
-      { entity: 'sensor.unifi_vision_us_8_60w', show_poe: false, title: 'US-8-60W (show_poe: false)' },
-      { entity: 'sensor.unifi_vision_theater_switch' },
-      { entity: 'sensor.unifi_vision_bridge_garage_up_switch' },
-      { entity: 'sensor.unifi_vision_helium_switches' },
-      { entity: 'sensor.unifi_vision_mello_home' },
+      { entity: 'sensor.unifi_vision_core_switch' },
+      { entity: 'sensor.unifi_vision_access_switch' },
+      { entity: 'sensor.unifi_vision_desk_switch', show_poe: false, title: 'Desk Switch (show_poe: false)' },
+      { entity: 'sensor.unifi_vision_media_switch' },
+      { entity: 'sensor.unifi_vision_remote_switch' },
+      { entity: 'sensor.unifi_vision_offline_switch' },
+      { entity: 'sensor.unifi_vision_home_gateway' },
       { entity: 'sensor.unifi_vision_mystery', title: 'Unknown model (generic fallback)' },
     ];
 

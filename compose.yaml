@@ -1,0 +1,13 @@
+services:
+  unifi-vision:
+    build: .
+    image: unifi-vision:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
