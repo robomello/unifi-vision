@@ -1,5 +1,7 @@
 # UniFi Vision
 
+![UniFi Vision dashboard preview](assets/unifi-vision-banner.png)
+
 Live UniFi switch faceplates for Home Assistant.
 
 UniFi Vision polls a UniFi Network controller, publishes switch and per-port
@@ -133,3 +135,7 @@ Then open `http://localhost:8930/dev-preview.html`.
   Run the poller only on a trusted LAN or through a private network/VPN.
 - The poller reads switch statistics; it does not expose a listening port or
   call UniFi configuration endpoints.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
