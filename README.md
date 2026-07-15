@@ -1,6 +1,6 @@
 # UniFi Vision
 
-![UniFi Vision dashboard preview](assets/unifi-vision-banner.png)
+![UniFi Vision card previews](assets/unifi-vision-cards.png)
 
 Live UniFi switch faceplates for Home Assistant.
 
