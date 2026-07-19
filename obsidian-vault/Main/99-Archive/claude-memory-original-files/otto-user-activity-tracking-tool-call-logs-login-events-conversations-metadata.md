@@ -133,10 +133,6 @@ class ChatMessage(BaseModel):
 ## Verification Commands
 
 ```bash
-# Verify migrations
-docker exec mercedes-postgres psql -U otto -d otto -c "\d login_events"
-docker exec mercedes-postgres psql -U otto -d otto -c "SELECT column_name FROM information_schema.columns WHERE table_name='conversations' AND column_name='metadata'"
-
 # Test event recording via dev login → admin endpoint
 curl -sk -X POST https://53.68.46.101/api/auth/login -d '{"username":"otto-admin","password":"..."}'
 curl -sk https://53.68.46.101/api/admin/activity -H "Authorization: Bearer <admin>"

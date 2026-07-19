@@ -1,11 +1,11 @@
 ---
 name: sofia.synai.ai is the AI Psychologist public route - down again 2026-07-09
-description: sofia.synai.ai fronts the ai-psychologist app; brought up 2026-07-07, but container gone and HTTP 530 as of 2026-07-09
+description: Phase 0 reality check completed for encryption implementation; ready to proceed.
 type: project
 ---
 
-`sofia.synai.ai` is the public Cloudflare route for the [AI Psychologist](ai-psychologist.md) app ("Sofia" persona: TTS voice ref `/data/sites/ai-psychologist/voices/sofia.wav`, portrait `sofia.png`, per docker-compose.yml). Brought up and browser-verified in the 2026-07-07 session ("make it 100% functional").
+Reality Check / Phase 0 Verification — 2026-07-12
 
-**Status 2026-07-09 (verified):** DOWN. `https://sofia.synai.ai/` returns HTTP 530, `ai-psychologist` container absent from `docker ps -a`, port 3021 unreachable. The container documented as "running, healthy" on Jul 5 no longer exists — needs `docker compose up -d` (not restart) to come back.
+All systems verified: source files located (4 new, 7 existing ready) | database schema confirmed (4 sensitive TEXT columns: messages.content, sessions.session_notes, mood_entries.note, insights.content) | service routing mapped (ai-psychologist container, ai_psychologist DB on shared postgres) | config ready to extend (SESSION_SECRET validation pattern established) | env vars confirmed (SESSION_SECRET and PASSWORD present in .env) | sensitive data flow traced (currently plaintext storage → plan: encrypt on INSERT, decrypt for LLM context only) | no existing encryption mechanism; AES-256-GCM + key derivation ready.
 
-Route standard: [synai.ai services CF Access standard](synai-ai-services-always-use-the-cf-access-standard.md).
+**Decision: Plan implementation can proceed.** All file paths, identifiers, database columns, and data flows verified.

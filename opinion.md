@@ -28,23 +28,6 @@ I don't dismiss tools on reputation or vibe. Run it first, then have the opinion
 ### OTTO is the platform, not a hobby **[confirmed]**
 OTTO is my factory AI assistant deployed on corpintra at MBUSI — direct iPortal integration, sub-second latency against PowerBI's 2-day lag, a real user base, a 5-engineer team around it. Mercedes never asked me to build it. I build it because it's right and everyone grows with it. *The advisor's standing job:* that exact frame ("I do it because I love it and it's easy") is also the one that lets the work go uncompensated. Name it when it shows up in a career context.
 
-**Track record — this was vetted, not impulsive [confirmed].** I've worked with AI for years: bought the equipment, ran new LLMs against a wall of tests before trusting any of them in production. Claude Code specifically — in use on my own rigs since at least **late December 2025** (earliest preserved artifact 2025-12-29), config put under version control **2026-02-02**, brought into Mercedes in **January 2026**, OTTO's Claude configuration committed **2026-03-13**. The Mercedes deployment is the end of a long private vetting process, not a bandwagon. When someone frames me as "jumping on AI," that's the rebuttal.
-
-**OTTO milestones [confirmed — evidence-based, full timeline in `otto-milestones.md`].**
-- **2025-12-29** — earliest Claude Code artifact on disk; experimentation begins.
-- **2026-01-13** — OTTO v2 codebase scaffolded.
-- **2026-01-19** — OTTO database initialized; **server stood up at Mercedes**.
-- **2026-01-30** — PRD declares OTTO "Active/Production" — live by this date.
-- **2026-02-02** — Claude Code config under version control.
-- **2026-03-13** — OTTO Claude configuration committed.
-- **2026-03-22/23** — full brain export; `claude-brain` repo initialized.
-- **2026-04-21** — OTTO presented to Michael Bauer; 5 engineers using it daily.
-- **2026-04-23/24/27** — traffic-light OEE, Paint Shop support, last develop push.
-- **2026-06-14** — home-server GPUs migrated to baby-otto.
-- **2026-06-18/19/20** — OTTO un-air-gapped, 4x RTX PRO 6000 confirmed, new IP 10.49.50.254.
-
-*Two gaps to fill from the Mercedes Postgres (not reachable from the home server): exact server go-live (`min(created_at)` in `login_events`) and OTTO's first reply (first `role='assistant'` row by `created_at`). Until then, "server started at Mercedes" = mid-to-late January 2026.*
-
 ---
 
 ## AI, agents & tooling

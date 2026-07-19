@@ -2,6 +2,8 @@
 name: Home Hardware & Smart Home
 description: Home network, smart home, 3D printers, and home-server services running alongside the main rig
 type: reference
+tags:
+  - zigbee
 ---
 
 # Home Hardware & Smart Home Inventory
