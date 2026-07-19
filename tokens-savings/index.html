@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Savings · synai</title>
+<style>
+  /* ============================================================
+     DATAVIZ DESIGN SYSTEM — reference palette (validated slots 1–4)
+     Light/dark swap in one place via CSS custom properties.
+     ============================================================ */
+  .viz-root {
+    color-scheme: light;
+    --page:            #f9f9f7;
+    --surface-1:       #fcfcfb;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --gridline:        #e1e0d9;
+    --baseline:        #c3c2b7;
+    --border:          rgba(11,11,11,0.10);
+    --good:            #006300;
+    /* categorical slots 1–4, fixed order (never cycled) */
+    --m-fable:         #2a78d6;  /* slot 1 blue    */
+    --m-opus:          #008300;  /* slot 2 green   */
+    --m-sonnet:        #e87ba4;  /* slot 3 magenta */
+    --m-haiku:         #eda100;  /* slot 4 yellow  */
+    --accent:          #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page:           #0d0d0d;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --m-fable:        #3987e5;
+      --m-opus:         #008300;
+      --m-sonnet:       #d55181;
+      --m-haiku:        #c98500;
+      --accent:         #3987e5;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page:           #0d0d0d;
+    --surface-1:      #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --good:           #0ca30c;
+    --m-fable:        #3987e5;
+    --m-opus:         #008300;
+    --m-sonnet:       #d55181;
+    --m-haiku:        #c98500;
+    --accent:         #3987e5;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+  }
+  .viz-root {
+    background: var(--page);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 28px clamp(16px, 4vw, 48px) 64px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* ---- header ---- */
+  header.top {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 8px;
+  }
+  .title-wrap h1 {
+    font-size: clamp(22px, 3.4vw, 30px); font-weight: 650;
+    letter-spacing: -0.02em; margin: 0;
+  }
+  .title-wrap .sub {
+    color: var(--text-secondary); font-size: 14px; margin-top: 4px;
+  }
+  .badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; padding: 4px 9px; border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .badge.sample {
+    color: #7a5b00; background: rgba(250,178,25,0.14);
+    border-color: rgba(250,178,25,0.4);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root .badge.sample { color: #fab219; }
+  }
+  :root[data-theme="dark"] .viz-root .badge.sample { color: #fab219; }
+  .theme-toggle {
+    font: inherit; font-size: 13px; cursor: pointer; color: var(--text-secondary);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 10px;
+  }
+  .theme-toggle:hover { color: var(--text-primary); }
+
+  .updated { color: var(--text-muted); font-size: 12.5px; margin: 2px 0 22px; }
+
+  /* ---- KPI row ---- */
+  .kpi-row {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 14px; margin-bottom: 30px;
+  }
+  @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 16px 15px;
+  }
+  .tile .label {
+    color: var(--text-secondary); font-size: 12.5px; font-weight: 550;
+    margin-bottom: 8px;
+  }
+  .tile .value {
+    font-size: clamp(26px, 4.2vw, 38px); font-weight: 680;
+    letter-spacing: -0.02em; line-height: 1;
+  }
+  .tile .value.hero { color: var(--accent); }
+  .tile .foot { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+  .tile .foot .up { color: var(--good); font-weight: 600; }
+
+  /* ---- section ---- */
+  .section-h {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 6px 0 12px;
+  }
+  .section-h h2 {
+    font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.01em;
+  }
+  .section-h .note { color: var(--text-muted); font-size: 12px; }
+
+  .panel {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 6px 4px; margin-bottom: 30px;
+  }
+
+  /* ---- bar chart ---- */
+  .bars { padding: 14px 16px 6px; }
+  .bar-row {
+    display: grid; grid-template-columns: 96px 1fr auto;
+    align-items: center; gap: 12px; padding: 9px 0;
+    border-radius: 8px;
+  }
+  .bar-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+  .bar-name {
+    font-size: 13.5px; font-weight: 550; display: flex; align-items: center; gap: 8px;
+  }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .bar-track { height: 26px; position: relative; }
+  .bar-fill {
+    height: 100%; border-radius: 4px; min-width: 3px;
+    transition: width .5s cubic-bezier(.2,.7,.2,1);
+  }
+  .bar-val {
+    font-variant-numeric: tabular-nums; font-size: 13px;
+    color: var(--text-secondary); font-weight: 600; white-space: nowrap;
+  }
+
+  /* ---- timeseries controls (segmented, matches .theme-toggle) ---- */
+  .ts-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg {
+    display: flex; border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; background: var(--surface-1);
+  }
+  .seg-btn {
+    font: inherit; font-size: 12.5px; cursor: pointer; color: var(--text-secondary);
+    background: transparent; border: none; padding: 5px 11px; line-height: 1.2;
+  }
+  .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+  .seg-btn:hover { color: var(--text-primary); }
+  .seg-btn.active { background: var(--accent); color: #fff; }
+
+  /* ---- timeseries chart ---- */
+  .ts-chart-wrap { position: relative; padding: 14px 16px 4px; }
+  .ts-chart { display: block; width: 100%; height: 220px; }
+  .ts-gridline { stroke: var(--gridline); stroke-width: 1; }
+  .ts-baseline { stroke: var(--baseline); stroke-width: 1; }
+  .ts-axis-label { font-size: 10.5px; fill: var(--text-muted); }
+  .ts-bar rect { transition: opacity .12s; }
+  .ts-bar:hover rect { opacity: 0.82; }
+  .ts-tooltip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; color: var(--text-primary);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.18); white-space: nowrap; z-index: 5;
+  }
+  .ts-tooltip.show { opacity: 1; }
+  .ts-tooltip .tt-date { font-weight: 650; margin-bottom: 5px; }
+  .ts-tooltip .tt-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 1.5px 0; color: var(--text-secondary);
+  }
+  .ts-tooltip .tt-row .tt-name { display: flex; align-items: center; gap: 6px; color: var(--text-primary); }
+  .ts-tooltip .tt-row .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .ts-legend {
+    display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 16px 12px;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .ts-legend .item { display: flex; align-items: center; gap: 6px; }
+  .ts-empty { color: var(--text-muted); font-size: 12.5px; padding: 2px 4px; }
+
+  /* ---- table ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead th {
+    text-align: right; color: var(--text-muted); font-weight: 600;
+    font-size: 12px; letter-spacing: 0.02em; text-transform: uppercase;
+    padding: 12px 16px 10px; border-bottom: 1px solid var(--gridline);
+  }
+  thead th:first-child { text-align: left; }
+  tbody td {
+    text-align: right; padding: 12px 16px; font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--gridline); color: var(--text-primary);
+  }
+  tbody td:first-child { text-align: left; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+  .model-cell { display: flex; align-items: center; gap: 9px; font-weight: 600; }
+  .muted-num { color: var(--text-secondary); }
+  .dollar { font-weight: 650; }
+  tfoot td {
+    text-align: right; padding: 13px 16px; font-variant-numeric: tabular-nums;
+    font-weight: 700; border-top: 2px solid var(--baseline);
+  }
+  tfoot td:first-child { text-align: left; color: var(--text-secondary); }
+
+  footer.pg { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+  footer.pg code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  }
+</style>
+</head>
+<body>
+<div class="viz-root">
+
+  <header class="top">
+    <div class="title-wrap">
+      <h1>Token Savings</h1>
+      <div class="sub">Per-model usage, compaction &amp; cost saved across Claude Code + agents</div>
+    </div>
+    <div class="badges">
+      <span class="badge sample" id="sampleBadge">● Sample data</span>
+      <button class="theme-toggle" id="themeBtn" type="button">◐ Theme</button>
+    </div>
+  </header>
+  <div class="updated" id="updated">Not yet wired to live proxy — showing placeholder values</div>
+
+  <!-- ===== KPI ROW ===== -->
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <!-- ===== BAR: tokens saved per model ===== -->
+  <div class="section-h">
+    <h2>Tokens saved by model</h2>
+    <span class="note">higher is better</span>
+  </div>
+  <div class="panel">
+    <div class="bars" id="bars"></div>
+  </div>
+
+  <!-- ===== TIMESERIES: savings over time ===== -->
+  <div class="section-h">
+    <h2>Savings over time</h2>
+    <div class="ts-controls" id="tsControls">
+      <div class="seg" id="tsGranularity">
+        <button type="button" class="seg-btn active" data-gran="day">Day</button>
+        <button type="button" class="seg-btn" data-gran="hour">Hour</button>
+      </div>
+      <div class="seg" id="tsRange"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="ts-chart-wrap" id="tsChartWrap">
+      <svg class="ts-chart" id="tsChart" preserveAspectRatio="none" viewBox="0 0 1000 220"></svg>
+      <div class="ts-tooltip" id="tsTooltip"></div>
+    </div>
+    <div class="ts-legend" id="tsLegend"></div>
+  </div>
+
+  <!-- ===== TABLE: full breakdown ===== -->
+  <div class="section-h">
+    <h2>Per-model breakdown</h2>
+    <span class="note">4 models · 4 metrics</span>
+  </div>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Usage</th>
+          <th>Compacted</th>
+          <th>Tokens saved</th>
+          <th>$ saved</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+      <tfoot id="tfoot"></tfoot>
+    </table>
+  </div>
+
+  <footer class="pg">
+    Live data from <code>rtk.commands</code> (Postgres), grouped by model.
+    Usage = input tokens, Compacted = output tokens, Saved = <code>saved_tokens</code>,
+    $ saved = saved tokens &times; list input price (conservative floor). Real savings are
+    higher: compressed output is written to prompt cache at 1.25&times; input rate and
+    re-read at 0.1&times; on every later turn (re-reads not tracked).
+  </footer>
+
+</div>
+
+<script>
+/* ============================================================
+   DATA  —  single source of truth.
+   Fetched live from GET /stats (same shape as this fallback).
+   Fallback below only renders if the fetch fails (offline/dev).
+   ============================================================ */
+const SAMPLE_DATA = {
+  live: false,                          // flip true when fed by the proxy
+  updated: null,                        // ISO timestamp from /stats
+  models: [
+    { key: "fable",  name: "Fable 5",  color: "var(--m-fable)",  usage: 2450000, compacted:  480000, saved: 1180000, dollars:  3.54 },
+    { key: "opus",   name: "Opus 4.8", color: "var(--m-opus)",   usage: 8900000, compacted: 2100000, saved: 4300000, dollars: 64.50 },
+    { key: "sonnet", name: "Sonnet 5", color: "var(--m-sonnet)", usage: 5200000, compacted: 1050000, saved: 2600000, dollars:  7.80 },
+    { key: "haiku",  name: "Haiku 4.5",color: "var(--m-haiku)",  usage: 1800000, compacted:  300000, saved:  720000, dollars:  0.58 },
+  ],
+};
+
+/* ---- formatters ---- */
+const fmtTok = n => {
+  if (n >= 1e9) return (n/1e9).toFixed(2).replace(/\.?0+$/,'') + "B";
+  if (n >= 1e6) return (n/1e6).toFixed(2).replace(/\.?0+$/,'') + "M";
+  if (n >= 1e3) return (n/1e3).toFixed(1).replace(/\.0$/,'') + "K";
+  return String(n);
+};
+const fmtTokFull = n => n.toLocaleString("en-US");
+const fmtUsd = n => "$" + n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const fmtPct = n => (n*100).toFixed(1) + "%";
+
+/* ---- render everything from a DATA object (same shape as /stats) ---- */
+function renderDashboard(DATA) {
+  const totUsage     = DATA.models.reduce((a,m)=>a+m.usage,0);
+  const totCompacted = DATA.models.reduce((a,m)=>a+m.compacted,0);
+  const totSaved     = DATA.models.reduce((a,m)=>a+m.saved,0);
+  const totDollars   = DATA.models.reduce((a,m)=>a+m.dollars,0);
+  const compRate     = totUsage ? totCompacted/totUsage : 0;
+
+  /* ---- KPI row ---- */
+  const kpis = [
+    { label: "Tokens saved",   value: fmtTok(totSaved), hero: true,  foot: fmtTokFull(totSaved) + " tokens" },
+    { label: "Cost saved",     value: fmtUsd(totDollars),            foot: "across 4 models" },
+    { label: "Total usage",    value: fmtTok(totUsage),              foot: fmtTokFull(totUsage) + " tokens" },
+    { label: "Compaction rate",value: fmtPct(compRate),              foot: fmtTok(totCompacted) + " compacted" },
+  ];
+  document.getElementById("kpiRow").innerHTML = kpis.map(k => `
+    <div class="tile">
+      <div class="label">${k.label}</div>
+      <div class="value${k.hero ? ' hero' : ''}">${k.value}</div>
+      <div class="foot">${k.foot}</div>
+    </div>`).join("");
+
+  /* ---- bar chart: tokens saved ---- */
+  const maxSaved = Math.max(...DATA.models.map(m=>m.saved));
+  document.getElementById("bars").innerHTML = DATA.models.map(m => {
+    const pct = maxSaved ? (m.saved/maxSaved*100) : 0;
+    return `
+    <div class="bar-row" title="${m.name}: ${fmtTokFull(m.saved)} tokens saved (${fmtUsd(m.dollars)})">
+      <div class="bar-name"><span class="swatch" style="background:${m.color}"></span>${m.name}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${m.color}"></div></div>
+      <div class="bar-val">${fmtTok(m.saved)}</div>
+    </div>`;
+  }).join("");
+
+  /* ---- table ---- */
+  document.getElementById("tbody").innerHTML = DATA.models.map(m => `
+    <tr title="${m.name}">
+      <td><span class="model-cell"><span class="swatch" style="background:${m.color}"></span>${m.name}</span></td>
+      <td class="muted-num">${fmtTok(m.usage)}</td>
+      <td class="muted-num">${fmtTok(m.compacted)}</td>
+      <td>${fmtTok(m.saved)}</td>
+      <td class="dollar">${fmtUsd(m.dollars)}</td>
+    </tr>`).join("");
+  document.getElementById("tfoot").innerHTML = `
+    <tr>
+      <td>Total</td>
+      <td>${fmtTok(totUsage)}</td>
+      <td>${fmtTok(totCompacted)}</td>
+      <td>${fmtTok(totSaved)}</td>
+      <td class="dollar">${fmtUsd(totDollars)}</td>
+    </tr>`;
+
+  /* ---- live/sample state ---- */
+  if (DATA.live) {
+    document.getElementById("sampleBadge").style.display = "none";
+    document.getElementById("updated").textContent =
+      DATA.updated ? "Updated " + new Date(DATA.updated).toLocaleString() : "Live";
+  }
+}
+
+/* ---- fetch live data, fall back to sample on failure ---- */
+fetch("/stats")
+  .then(r => { if (!r.ok) throw new Error("stats " + r.status); return r.json(); })
+  .then(renderDashboard)
+  .catch(err => {
+    console.error("Falling back to sample data:", err);
+    renderDashboard(SAMPLE_DATA);
+  });
+
+/* ============================================================
+   TIME SERIES — "Savings over time"
+   Fetched live from GET /stats/timeseries?granularity=&range=
+   No external chart libs — hand-built stacked-bar SVG.
+   ============================================================ */
+const MODEL_META = {
+  fable:  { name: "Fable 5",   color: "var(--m-fable)" },
+  opus:   { name: "Opus 4.8",  color: "var(--m-opus)" },
+  sonnet: { name: "Sonnet 5",  color: "var(--m-sonnet)" },
+  haiku:  { name: "Haiku 4.5", color: "var(--m-haiku)" },
+};
+const MODEL_ORDER = ["fable", "opus", "sonnet", "haiku"];
+const RANGE_OPTIONS = { day: [7, 14, 30], hour: [24, 48, 72] };
+const TS_STATE = { granularity: "day", range: 14 };
+let tsData = null;
+
+function renderRangeButtons() {
+  const opts = RANGE_OPTIONS[TS_STATE.granularity];
+  document.getElementById("tsRange").innerHTML = opts.map(r => `
+    <button type="button" class="seg-btn${r === TS_STATE.range ? ' active' : ''}" data-range="${r}">${r}</button>`).join("");
+}
+
+function tsDateLabel(ts, granularity) {
+  const [y, m, d] = ts.slice(0, 10).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (granularity === "hour") {
+    return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) + " " + ts.slice(11, 13) + ":00";
+  }
+  return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function tsAxisLabel(ts, granularity, todayKey) {
+  if (granularity === "hour") return ts.slice(11, 13) + ":00";
+  const key = ts.slice(0, 10);
+  if (key === todayKey) return "Today";
+  const [ty, tm, td] = todayKey.split("-").map(Number);
+  const [y, m, d] = key.split("-").map(Number);
+  const diffDays = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(y, m - 1, d)) / 86400000);
+  if (diffDays === 1) return "Yesterday";
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function renderTimeseries(data) {
+  tsData = data;
+  const buckets = data.buckets || [];
+  const svg = document.getElementById("tsChart");
+  const legend = document.getElementById("tsLegend");
+
+  legend.innerHTML = MODEL_ORDER.map(k => `
+    <span class="item"><span class="swatch" style="background:${MODEL_META[k].color}"></span>${MODEL_META[k].name}</span>`).join("");
+
+  if (!buckets.length) {
+    svg.innerHTML = "";
+    legend.insertAdjacentHTML("beforeend", `<span class="ts-empty">No data in range</span>`);
+    return;
+  }
+
+  const W = 1000, H = 220, padL = 4, padR = 4, padT = 10, padB = 24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = buckets.length;
+  const slot = plotW / n;
+  const gap = n > 30 ? 1.5 : 4;
+  const barW = Math.max(1, slot - gap);
+  const maxTotal = Math.max(1, ...buckets.map(b => b.total_saved || 0));
+  const todayKey = buckets[buckets.length - 1].ts.slice(0, 10);
+
+  let svgInner = `<line class="ts-baseline" x1="${padL}" y1="${(padT + plotH).toFixed(1)}" x2="${W - padR}" y2="${(padT + plotH).toFixed(1)}" />`;
+  for (let i = 1; i <= 3; i++) {
+    const y = padT + plotH - (plotH * i / 4);
+    svgInner += `<line class="ts-gridline" x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" />`;
+  }
+
+  buckets.forEach((b, i) => {
+    const x = padL + i * slot + (slot - barW) / 2;
+    let yCursor = padT + plotH;
+    let segs = "";
+    MODEL_ORDER.forEach(k => {
+      const v = (b.models && b.models[k] && b.models[k].saved) || 0;
+      if (v <= 0) return;
+      const hgt = (v / maxTotal) * plotH;
+      const y = yCursor - hgt;
+      segs += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barW.toFixed(2)}" height="${Math.max(hgt, 0).toFixed(2)}" style="fill:${MODEL_META[k].color}" />`;
+      yCursor = y;
+    });
+    svgInner += `<g class="ts-bar" data-idx="${i}" tabindex="0">
+      <rect x="${x.toFixed(2)}" y="${padT}" width="${barW.toFixed(2)}" height="${plotH}" fill="transparent" />
+      ${segs}
+    </g>`;
+  });
+
+  const maxLabels = data.granularity === "hour" ? 8 : 10;
+  const labelEvery = Math.max(1, Math.round(n / Math.min(n, maxLabels)));
+  buckets.forEach((b, i) => {
+    if ((n - 1 - i) % labelEvery !== 0) return;
+    const x = padL + i * slot + slot / 2;
+    const label = tsAxisLabel(b.ts, data.granularity, todayKey);
+    svgInner += `<text class="ts-axis-label" x="${x.toFixed(2)}" y="${H - 8}" text-anchor="middle">${label}</text>`;
+  });
+
+  svg.innerHTML = svgInner;
+  attachTsHover(buckets);
+}
+
+function attachTsHover(buckets) {
+  const wrap = document.getElementById("tsChartWrap");
+  const tooltip = document.getElementById("tsTooltip");
+  const svg = document.getElementById("tsChart");
+
+  function show(b) {
+    const rows = MODEL_ORDER
+      .filter(k => (b.models[k] && b.models[k].saved) > 0)
+      .map(k => `
+        <div class="tt-row">
+          <span class="tt-name"><span class="sw" style="background:${MODEL_META[k].color}"></span>${MODEL_META[k].name}</span>
+          <span>${fmtTokFull(b.models[k].saved)}</span>
+        </div>`).join("") || `<div class="tt-row"><span>No savings</span></div>`;
+    tooltip.innerHTML = `<div class="tt-date">${tsDateLabel(b.ts, tsData.granularity)} · ${fmtTokFull(b.total_saved || 0)} saved</div>${rows}`;
+    tooltip.classList.add("show");
+  }
+  function move(e) {
+    const r = wrap.getBoundingClientRect();
+    let x = e.clientX - r.left + 14;
+    let y = e.clientY - r.top + 14;
+    const tw = tooltip.offsetWidth || 160, th = tooltip.offsetHeight || 60;
+    if (x + tw > r.width) x = e.clientX - r.left - tw - 14;
+    if (y + th > r.height) y = e.clientY - r.top - th - 14;
+    tooltip.style.left = Math.max(0, x) + "px";
+    tooltip.style.top = Math.max(0, y) + "px";
+  }
+  svg.querySelectorAll(".ts-bar").forEach(g => {
+    const idx = +g.getAttribute("data-idx");
+    g.addEventListener("mouseenter", () => show(buckets[idx]));
+    g.addEventListener("mousemove", move);
+    g.addEventListener("focus", () => show(buckets[idx]));
+    g.addEventListener("mouseleave", () => tooltip.classList.remove("show"));
+    g.addEventListener("blur", () => tooltip.classList.remove("show"));
+  });
+}
+
+function fetchTimeseries() {
+  const { granularity, range } = TS_STATE;
+  fetch(`/stats/timeseries?granularity=${granularity}&range=${range}`)
+    .then(r => { if (!r.ok) throw new Error("timeseries " + r.status); return r.json(); })
+    .then(renderTimeseries)
+    .catch(err => {
+      console.error("timeseries fetch failed:", err);
+      document.getElementById("tsChart").innerHTML = "";
+      document.getElementById("tsLegend").innerHTML =
+        `<span class="ts-empty">Unable to load time series data</span>`;
+    });
+}
+
+document.getElementById("tsGranularity").addEventListener("click", e => {
+  const btn = e.target.closest("[data-gran]");
+  if (!btn) return;
+  const g = btn.getAttribute("data-gran");
+  if (g === TS_STATE.granularity) return;
+  TS_STATE.granularity = g;
+  TS_STATE.range = RANGE_OPTIONS[g][1];
+  document.querySelectorAll("#tsGranularity .seg-btn").forEach(b =>
+    b.classList.toggle("active", b.getAttribute("data-gran") === g));
+  renderRangeButtons();
+  fetchTimeseries();
+});
+
+document.getElementById("tsRange").addEventListener("click", e => {
+  const btn = e.target.closest("[data-range]");
+  if (!btn) return;
+  const r = +btn.getAttribute("data-range");
+  if (r === TS_STATE.range) return;
+  TS_STATE.range = r;
+  document.querySelectorAll("#tsRange .seg-btn").forEach(b =>
+    b.classList.toggle("active", +b.getAttribute("data-range") === r));
+  fetchTimeseries();
+});
+
+renderRangeButtons();
+fetchTimeseries();
+
+/* ---- theme toggle (light ↔ dark, overrides OS) ---- */
+const root = document.documentElement;
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const cur = root.getAttribute("data-theme");
+  const next = cur === "dark" ? "light"
+             : cur === "light" ? "dark"
+             : (matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark");
+  root.setAttribute("data-theme", next);
+});
+</script>
+</body>
+</html>

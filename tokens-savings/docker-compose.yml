@@ -1,0 +1,15 @@
+services:
+  tokens-savings-web:
+    build: .
+    container_name: tokens-savings-web
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://n8n:n8n@n8n-postgres:5432/rtk
+    ports:
+      - "127.0.0.1:8098:8080"
+    networks:
+      - n8n-net
+
+networks:
+  n8n-net:
+    external: true
